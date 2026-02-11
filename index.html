@@ -22,7 +22,7 @@
         /* واجهة الدخول */
         #auth-screen { position: fixed; inset: 0; z-index: 9999; background: radial-gradient(circle at center, #1a1030, #050505); display: flex; align-items: center; justify-content: center; padding: 20px; }
         .auth-box { background: var(--card); border: 1px solid var(--gold); padding: 30px; border-radius: 25px; width: 100%; max-width: 400px; text-align: center; box-shadow: 0 0 30px rgba(212, 175, 55, 0.1); }
-        .auth-box input { width: 100%; padding: 12px; margin: 10px 0; border-radius: 12px; border: 1px solid var(--gold); background: var(--input-bg); color: white; outline: none; }
+        .auth-box input, .auth-box textarea { width: 100%; padding: 12px; margin: 10px 0; border-radius: 12px; border: 1px solid var(--gold); background: var(--input-bg); color: white; outline: none; }
         .btn-gold { background: linear-gradient(135deg, var(--gold), #8a6d3b); color: black; border: none; padding: 12px 30px; border-radius: 12px; font-weight: bold; cursor: pointer; width: 100%; margin-top: 10px; }
 
         /* الهيكل */
@@ -83,8 +83,7 @@
         <div class="main-content">
             <div id="chat-flow"></div>
             <div class="side-bar">
-                <i class="fas fa-user-circle side-btn" onclick="openProfile()"></i>
-                <i class="fas fa-user-slash side-btn" onclick="showBannedList()"></i>
+                <i class="fas fa-user-circle side-btn" onclick="openMyProfile()"></i> <i class="fas fa-user-slash side-btn" onclick="showBannedList()"></i>
                 <i class="fas fa-sign-out-alt side-btn" onclick="location.reload()"></i>
             </div>
         </div>
@@ -97,6 +96,7 @@
 
     <div id="msg-menu-overlay" class="context-overlay" onclick="closeMenu()">
         <div class="context-menu" onclick="event.stopPropagation()">
+            <div class="menu-item" onclick="viewUserProfile()"><i class="fas fa-address-card"></i> عرض الملف الشخصي</div>
             <div class="menu-item" onclick="prepareReply()"><i class="fas fa-reply"></i> رد على الرسالة</div>
             <div id="my-ops">
                 <div class="menu-item" onclick="startEdit()"><i class="fas fa-edit"></i> تعديل رسالتي</div>
@@ -104,6 +104,24 @@
             </div>
             <div id="admin-ops">
                 <div class="menu-item" style="color:var(--danger); font-weight:bold" onclick="banUser()"><i class="fas fa-ban"></i> حظر المستخدم نهائياً</div>
+            </div>
+        </div>
+    </div>
+
+    <div id="modal-profile" class="modal" onclick="this.style.display='none'">
+        <div class="auth-box" onclick="event.stopPropagation()">
+            <i class="fas fa-crown" style="font-size:3rem; color:var(--gold); margin-bottom:15px"></i>
+            
+            <div id="profile-view-mode" style="display:none">
+                <h2 id="view-name" style="color:var(--gold); margin:0"></h2>
+                <p id="view-bio" style="color:#ccc; font-style:italic; margin-top:10px"></p>
+            </div>
+
+            <div id="profile-edit-mode" style="display:none">
+                <h3 style="color:white">تعديل ملفي</h3>
+                <input type="text" id="edit-name" placeholder="اسمك الجديد">
+                <textarea id="edit-bio" rows="3" placeholder="اكتب نبذة عنك (البايو)..."></textarea>
+                <button class="btn-gold" onclick="saveMyProfile()">حفظ التعديلات</button>
             </div>
         </div>
     </div>
@@ -136,13 +154,12 @@
             const snap = await get(ref(db, 'users/' + uid));
             if(snap.exists() && snap.val().isBanned) return alert("أنت محظور من دخول المملكة!");
             
-            me = snap.exists() ? snap.val() : { user: uid, name: document.getElementById('user-display').value || uid, isOwner: uid === 'reza' };
+            me = snap.exists() ? snap.val() : { user: uid, name: document.getElementById('user-display').value || uid, bio: "لا يوجد بايو", isOwner: uid === 'reza' };
             if(!snap.exists()) await set(ref(db, 'users/' + uid), me);
             
             document.getElementById('auth-screen').style.display = 'none';
             startChat();
             
-            // مراقبة الحظر اللحظي
             onValue(ref(db, `users/${me.user}/isBanned`), s => { if(s.val() === true) { alert("تم حظرك الآن!"); location.reload(); }});
         };
 
@@ -151,7 +168,6 @@
                 const flow = document.getElementById('chat-flow');
                 flow.innerHTML = '';
                 
-                // جلب بيانات جميع المستخدمين لمعرفة من هو المحظور
                 const usersSnap = await get(ref(db, 'users'));
                 const allUsers = usersSnap.val() || {};
 
@@ -190,6 +206,7 @@
             document.getElementById('msg-input').value = '';
         };
 
+        // --- القوائم والبروفايل ---
         window.openMenu = (id, m) => {
             activeMsg = { id, ...m };
             document.getElementById('msg-menu-overlay').style.display = 'flex';
@@ -199,6 +216,46 @@
 
         window.closeMenu = () => document.getElementById('msg-menu-overlay').style.display = 'none';
 
+        // عرض ملف شخص آخر
+        window.viewUserProfile = async () => {
+            const uid = activeMsg.uid;
+            const snap = await get(ref(db, 'users/' + uid));
+            if(snap.exists()) {
+                const u = snap.val();
+                document.getElementById('modal-profile').style.display = 'flex';
+                document.getElementById('profile-view-mode').style.display = 'block';
+                document.getElementById('profile-edit-mode').style.display = 'none';
+                
+                document.getElementById('view-name').innerText = u.name;
+                document.getElementById('view-bio').innerText = u.bio || "لا يوجد بايو";
+            }
+            closeMenu();
+        };
+
+        // فتح ملفي للتعديل
+        window.openMyProfile = () => {
+            document.getElementById('modal-profile').style.display = 'flex';
+            document.getElementById('profile-view-mode').style.display = 'none';
+            document.getElementById('profile-edit-mode').style.display = 'block';
+            
+            document.getElementById('edit-name').value = me.name;
+            document.getElementById('edit-bio').value = me.bio || "";
+        };
+
+        // حفظ ملفي
+        window.saveMyProfile = async () => {
+            const newName = document.getElementById('edit-name').value.trim();
+            const newBio = document.getElementById('edit-bio').value.trim();
+            
+            if(newName) {
+                await update(ref(db, 'users/' + me.user), { name: newName, bio: newBio });
+                me.name = newName; me.bio = newBio;
+                alert("تم تحديث الملف الشخصي!");
+                document.getElementById('modal-profile').style.display = 'none';
+            }
+        };
+
+        // --- الباند والإدارة ---
         window.banUser = async () => {
             await update(ref(db, `users/${activeMsg.uid}`), { isBanned: true });
             alert("تم حظر المستخدم بنجاح");
