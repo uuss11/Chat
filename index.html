@@ -2,7 +2,7 @@
 <html lang="ar" dir="rtl">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
     <title>REZA Luxury Chat</title>
     <script src="https://unpkg.com/peerjs@1.5.2/dist/peerjs.min.js"></script>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
@@ -45,9 +45,11 @@
             font-weight: bold; cursor: pointer; width: 100%; margin-top: 10px;
         }
 
-        /* الهيكل الرئيسي */
+        /* الهيكل الرئيسي - تعديل الارتفاع ليكون ديناميكي */
         .app-container {
-            display: flex; flex-direction: column; height: 100vh; width: 100%;
+            display: flex; flex-direction: column; 
+            height: 100vh; height: 100dvh; /* لدعم المتصفحات الحديثة */
+            width: 100%;
         }
 
         /* شريط الاتصال */
@@ -96,18 +98,22 @@
         }
         .side-btn { font-size: 1.4rem; color: var(--gold); cursor: pointer; position: relative; }
 
-        /* شريط الإدخال */
+        /* شريط الإدخال - تعديل لرفعه للأعلى ومنع اختفائه */
         .footer-bar {
-            padding: 10px 15px; background: #000; display: flex; gap: 10px; align-items: center;
+            padding: 10px 15px 25px 15px; /* زيادة البادينغ السفلي لرفعه */
+            background: #000; display: flex; gap: 10px; align-items: center;
             border-top: 1px solid rgba(255,255,255,0.1);
+            padding-bottom: calc(20px + env(safe-area-inset-bottom)); /* دعم نوتش الأيفون وأزرار الأندرويد */
         }
         #msg-input {
             flex: 1; background: var(--input-bg); border: 1px solid var(--gold);
             padding: 12px; border-radius: 15px; color: white; outline: none;
+            font-size: 16px; /* لمنع الزووم التلقائي في الأيفون */
         }
         .send-btn {
             background: var(--gold); color: black; width: 45px; height: 45px;
             border-radius: 12px; border: none; font-size: 1.2rem;
+            display: flex; align-items: center; justify-content: center;
         }
 
         /* قائمة الخيارات */
@@ -217,7 +223,7 @@
                 if(snap.val().isBanned) return alert("عذراً، أنت محظور من دخول الشات.");
                 if(snap.val().pass === pass) {
                     me = snap.val();
-                } else return alert("كلمة المرor خاطئة");
+                } else return alert("كلمة المرور خاطئة");
             } else {
                 me = { user: uid, name: name || uid, pass, bio: "أنا هنا في مملكة رضا", isOwner: uid === 'reza' };
                 await set(ref(db, 'users/' + uid), me);
@@ -238,17 +244,22 @@
                     const div = document.createElement('div');
                     div.className = `msg-container ${isMine ? 'mine' : 'others'}`;
                     
-                    const time = m.time ? new Date(m.time).toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'}) : '';
+                    // تصحيح الوقت لتجنب Invalid Date
+                    let time = "";
+                    if(m.time) {
+                        const d = new Date(m.time);
+                        time = isNaN(d) ? "" : d.toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'});
+                    }
                     
                     div.innerHTML = `
                         <div style="font-size:0.7rem; margin-bottom:3px">
                             ${m.uid === 'reza' ? '<span class="owner-tag">المالك 👑</span>' : ''}
-                            <span style="color:#aaa">${m.name}</span>
+                            <span style="color:#aaa">${m.name || 'مستخدم'}</span>
                             <span style="font-size:0.6rem; opacity:0.5; margin-right:5px">${time}</span>
                         </div>
                         <div class="bubble ${m.banned ? 'banned-msg' : ''}" onclick="openMenu(event, '${child.key}', ${JSON.stringify(m).replace(/"/g, '&quot;')})">
                             ${m.reply ? `<div style="font-size:0.7rem; color:var(--gold); border-right:2px solid; padding-right:5px; margin-bottom:5px">رد على ${m.reply.name}: ${m.reply.txt}</div>` : ''}
-                            ${m.txt}
+                            ${m.txt || ''}
                             ${m.isEdited ? '<span style="font-size:0.6rem; opacity:0.5"> (مُعدلة)</span>' : ''}
                         </div>
                     `;
@@ -289,19 +300,23 @@
 
         window.startEdit = () => {
             isEdit = true;
-            document.getElementById('msg-input').value = activeMsg.txt;
+            document.getElementById('msg-input').value = activeMsg.txt || "";
             document.getElementById('msg-input').focus();
             closeMenu();
         };
 
         window.deleteMsg = () => {
-            remove(ref(db, `messages/${activeMsg.id}`));
+            if(confirm("هل أنت متأكد من حذف الرسالة؟")) {
+                remove(ref(db, `messages/${activeMsg.id}`));
+            }
             closeMenu();
         };
 
         window.banUser = async () => {
-            await update(ref(db, `users/${activeMsg.uid}`), { isBanned: true });
-            alert(`تم حظر ${activeMsg.name} نهائياً`);
+            if(confirm(`هل تريد حظر ${activeMsg.name}؟`)) {
+                await update(ref(db, `users/${activeMsg.uid}`), { isBanned: true });
+                alert(`تم حظر ${activeMsg.name} نهائياً`);
+            }
             closeMenu();
         };
 
@@ -323,12 +338,14 @@
                 });
 
                 const snap = await get(ref(db, 'voice_active'));
-                snap.forEach(child => {
-                    if(child.key !== me.user) {
-                        const call = peer.call(child.key, localStream);
-                        setupAudio(call);
-                    }
-                });
+                if(snap.exists()) {
+                    snap.forEach(child => {
+                        if(child.key !== me.user) {
+                            const call = peer.call(child.key, localStream);
+                            setupAudio(call);
+                        }
+                    });
+                }
 
                 onValue(ref(db, 'voice_active'), s => {
                     const box = document.getElementById('voice-users');
@@ -345,7 +362,7 @@
                 const audio = new Audio();
                 audio.srcObject = stream;
                 audio.autoplay = true;
-                audio.play(); // لضمان العمل على الموبايل
+                audio.play(); 
             });
         }
 
@@ -356,18 +373,16 @@
             location.reload();
         };
 
-        // وظائف مساعدة
         window.closeMenu = () => document.getElementById('msg-menu').style.display = 'none';
         window.prepareReply = () => { replyData = { name: activeMsg.name, txt: activeMsg.txt }; document.getElementById('rep-preview').style.display = 'block'; document.getElementById('rep-name').innerText = activeMsg.name; closeMenu(); };
         window.cancelReply = () => { replyData = null; document.getElementById('rep-preview').style.display = 'none'; };
         window.openProfile = () => { 
             document.getElementById('modal-p').style.display = 'flex'; 
             document.getElementById('p-name').innerText = me.name;
-            document.getElementById('p-bio').innerText = me.bio;
+            document.getElementById('p-bio').innerText = me.bio || "لا يوجد بايو";
             document.getElementById('my-edit-fields').style.display = 'block';
         };
         document.addEventListener('click', e => { if(!e.target.closest('.bubble')) closeMenu(); });
     </script>
 </body>
 </html>
-
