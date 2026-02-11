@@ -1,0 +1,202 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>REZA Global Chat | الشات العالمي</title>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
+    <style>
+        :root {
+            --glass: rgba(255, 255, 255, 0.1);
+            --blur: blur(20px);
+            --accent: #a855f7;
+            --owner-tag: #ff0033;
+            --ban-color: #ff4444;
+        }
+
+        body {
+            margin: 0; padding: 0;
+            background: radial-gradient(circle at top, #1e293b, #0f172a);
+            background-attachment: fixed;
+            color: white; font-family: 'Segoe UI', Tahoma, sans-serif;
+            height: 100vh; display: flex; align-items: center; justify-content: center;
+        }
+
+        .glass-panel {
+            background: var(--glass);
+            backdrop-filter: var(--blur);
+            -webkit-backdrop-filter: var(--blur);
+            border: 1px solid rgba(255, 255, 255, 0.15);
+            border-radius: 25px;
+            box-shadow: 0 15px 35px rgba(0, 0, 0, 0.5);
+        }
+
+        /* واجهة الدخول */
+        #auth-screen { width: 90%; max-width: 400px; padding: 40px 30px; text-align: center; }
+        input {
+            width: 100%; padding: 14px; margin: 10px 0;
+            background: rgba(0,0,0,0.3); border: 1px solid rgba(255,255,255,0.1);
+            border-radius: 12px; color: white; outline: none; box-sizing: border-box;
+        }
+
+        .btn-main {
+            width: 100%; padding: 14px; background: var(--accent);
+            border: none; border-radius: 12px; color: white; font-weight: bold; cursor: pointer;
+        }
+
+        /* واجهة الشات */
+        #chat-screen { width: 95%; max-width: 800px; height: 90vh; display: none; flex-direction: column; }
+        .chat-header { padding: 20px; border-bottom: 1px solid rgba(255,255,255,0.1); display: flex; justify-content: space-between; align-items: center; }
+
+        #messages-container { flex-grow: 1; overflow-y: auto; padding: 20px; display: flex; flex-direction: column; gap: 15px; }
+
+        .msg { max-width: 85%; align-self: flex-start; }
+        .msg-content { background: rgba(255,255,255,0.07); padding: 12px 18px; border-radius: 18px; border: 1px solid rgba(255,255,255,0.05); }
+
+        .msg-name { font-weight: bold; font-size: 0.85rem; margin-bottom: 5px; display: flex; align-items: center; gap: 5px; }
+        
+        .owner-name { color: #d8b4fe !important; text-shadow: 0 0 10px #a855f7; font-weight: 900; }
+        .owner-badge { background: var(--owner-tag); color: white; font-size: 0.65rem; padding: 2px 8px; border-radius: 6px; }
+
+        .banned-name { color: var(--ban-color) !important; text-decoration: line-through; }
+        .ban-badge { background: var(--ban-color); color: white; font-size: 0.65rem; padding: 2px 8px; border-radius: 6px; }
+
+        .ban-btn { background: none; border: 1px solid var(--ban-color); color: var(--ban-color); font-size: 0.7rem; padding: 2px 5px; border-radius: 4px; cursor: pointer; margin-top: 5px; }
+
+        .chat-input-area { padding: 20px; display: flex; gap: 12px; background: rgba(0,0,0,0.2); }
+        #send-btn { background: var(--accent); border: none; width: 50px; height: 50px; border-radius: 50%; color: white; cursor: pointer; }
+    </style>
+</head>
+<body>
+
+    <div id="auth-screen" class="glass-panel">
+        <h2 style="color: var(--accent);">REZA CHAT 💎</h2>
+        <input type="text" id="reg-name" placeholder="الاسم المستعار">
+        <input type="text" id="reg-user" placeholder="اليوزر (إنجليزي)">
+        <input type="password" id="reg-pass" placeholder="كلمة المرور">
+        <button class="btn-main" id="auth-btn">دخول / تسجيل</button>
+    </div>
+
+    <div id="chat-screen" class="glass-panel">
+        <div class="chat-header">
+            <div id="current-user-info" style="font-weight: bold; color: var(--accent);"></div>
+            <button onclick="location.reload()" style="background:none; border:none; color:#f87171; cursor:pointer;">خروج</button>
+        </div>
+        <div id="messages-container"></div>
+        <div class="chat-input-area">
+            <input type="text" id="msg-text" placeholder="اكتب رسالتك..." style="margin:0;">
+            <button id="send-btn"><i class="fas fa-paper-plane"></i></button>
+        </div>
+    </div>
+
+    <script type="module">
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js";
+        import { getDatabase, ref, set, get, push, onValue, query, limitToLast, update } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-database.js";
+
+        const firebaseConfig = {
+            apiKey: "AIzaSyBvGWF0u83mrdtBTLWgGV-ExuO6-4j-1Xk",
+            authDomain: "reza-3d325.firebaseapp.com",
+            databaseURL: "https://reza-3d325-default-rtdb.europe-west1.firebasedatabase.app",
+            projectId: "reza-3d325",
+            storageBucket: "reza-3d325.firebasestorage.app",
+            messagingSenderId: "454599070550",
+            appId: "1:454599070550:web:48f519a98dcf302bbe3cf7"
+        };
+
+        const app = initializeApp(firebaseConfig);
+        const db = getDatabase(app);
+        let currentUser = null;
+
+        document.getElementById('auth-btn').onclick = async () => {
+            const name = document.getElementById('reg-name').value.trim();
+            const user = document.getElementById('reg-user').value.trim().toLowerCase();
+            const pass = document.getElementById('reg-pass').value.trim();
+
+            if(!user || !pass) return alert("أكمل البيانات");
+
+            const userRef = ref(db, 'users/' + user);
+            const snap = await get(userRef);
+
+            if(snap.exists()) {
+                const userData = snap.val();
+                if(userData.isBanned) return alert("هذا الحساب محظور! 🚫");
+                if(userData.pass === pass) login(userData);
+                else alert("كلمة المرور خطأ");
+            } else {
+                if(!name) return alert("اكتب اسمك للتسجيل الجديد");
+                const userData = { name, user, pass, isBanned: false };
+                await set(userRef, userData);
+                login(userData);
+            }
+        };
+
+        function login(userData) {
+            currentUser = userData;
+            document.getElementById('auth-screen').style.display = 'none';
+            document.getElementById('chat-screen').style.display = 'flex';
+            document.getElementById('current-user-info').innerText = (currentUser.user === 'reza' ? "المالك: " : "") + userData.name;
+            
+            onValue(ref(db, 'users/' + currentUser.user + '/isBanned'), (snap) => {
+                if(snap.val() === true) {
+                    alert("تم حظرك من قبل المالك!");
+                    location.reload();
+                }
+            });
+            loadMessages();
+        }
+
+        document.getElementById('send-btn').onclick = async () => {
+            const text = document.getElementById('msg-text').value.trim();
+            if(!text) return;
+            await push(ref(db, 'messages'), {
+                uid: currentUser.user,
+                name: currentUser.name,
+                text: text,
+                time: Date.now()
+            });
+            document.getElementById('msg-text').value = '';
+        };
+
+        window.banUser = (targetUser) => {
+            if(confirm(`حظر ${targetUser} نهائياً؟`)) {
+                update(ref(db, 'users/' + targetUser), { isBanned: true });
+            }
+        };
+
+        function loadMessages() {
+            const msgQuery = query(ref(db, 'messages'), limitToLast(100));
+            onValue(msgQuery, async (snapshot) => {
+                const container = document.getElementById('messages-container');
+                container.innerHTML = '';
+                
+                const usersSnap = await get(ref(db, 'users'));
+                const allUsers = usersSnap.val() || {};
+
+                snapshot.forEach((child) => {
+                    const m = child.val();
+                    const userData = allUsers[m.uid] || {};
+                    const isOwner = m.uid === 'reza';
+                    const isBanned = userData.isBanned || false;
+                    
+                    const div = document.createElement('div');
+                    div.className = 'msg';
+                    div.innerHTML = `
+                        <div class="msg-content">
+                            <span class="msg-name ${isOwner ? 'owner-name' : ''} ${isBanned ? 'banned-name' : ''}">
+                                ${isOwner ? '<span class="owner-badge">المالك</span>' : ''}
+                                ${isBanned ? '<span class="ban-badge">BAN</span>' : ''}
+                                ${m.name}
+                            </span>
+                            <div style="${isBanned ? 'opacity: 0.5' : ''}">${m.text}</div>
+                            ${(currentUser.user === 'reza' && !isOwner && !isBanned) ? 
+                                `<button class="ban-btn" onclick="banUser('${m.uid}')">حظر المستخدم</button>` : ''}
+                        </div>
+                    `;
+                    container.appendChild(div);
+                });
+                container.scrollTop = container.scrollHeight;
+            });
+        }
+    </script>
+</body>
+</html>
