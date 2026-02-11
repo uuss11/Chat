@@ -2,183 +2,188 @@
 <html lang="ar" dir="rtl">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>REZA Luxury Universe</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>REZA Luxury Chat</title>
     <script src="https://unpkg.com/peerjs@1.5.2/dist/peerjs.min.js"></script>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
-    <link href="https://fonts.googleapis.com/css2?family=Cairo:wght@300;400;600;800&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Cairo:wght@400;700&display=swap" rel="stylesheet">
     <style>
         :root {
             --gold: #d4af37;
-            --gold-dark: #aa841e;
-            --bg: #0a0a0c;
-            --card: rgba(20, 20, 25, 0.9);
-            --text: #e0e0e0;
-            --danger: #ef4444;
-            --glass: rgba(255, 255, 255, 0.05);
+            --gold-bright: #fff3a0;
+            --bg: #050505;
+            --card: rgba(20, 20, 25, 0.95);
+            --danger: #ff4444;
+            --input-bg: rgba(40, 30, 60, 0.6);
         }
 
-        * { box-sizing: border-box; font-family: 'Cairo', sans-serif; transition: 0.3s; }
-        body { margin: 0; background: var(--bg); color: var(--text); height: 100vh; overflow: hidden; }
-
-        /* الأنماط العامة للواجهات */
-        .glass-panel { background: var(--card); backdrop-filter: blur(15px); border: 1px solid var(--glass); border-radius: 20px; }
-        .btn-luxury { background: linear-gradient(135deg, var(--gold), var(--gold-dark)); color: #000; border: none; padding: 10px 20px; border-radius: 10px; font-weight: bold; cursor: pointer; }
-        .btn-luxury:hover { transform: scale(1.05); box-shadow: 0 0 15px rgba(212, 175, 55, 0.4); }
-
-        /* شريط الاتصال الجماعي */
-        #voice-bar {
-            position: fixed; top: 10px; left: 50%; transform: translateX(-50%);
-            width: 90%; max-width: 800px; z-index: 1000; padding: 10px 20px;
-            display: flex; align-items: center; justify-content: space-between;
-            border: 1px solid var(--gold); box-shadow: 0 0 20px rgba(212, 175, 55, 0.2);
+        * { box-sizing: border-box; font-family: 'Cairo', sans-serif; -webkit-tap-highlight-color: transparent; }
+        
+        body, html { 
+            margin: 0; padding: 0; width: 100%; height: 100%; 
+            background: var(--bg); color: white; overflow: hidden;
         }
-        .speaker-list { display: flex; gap: 10px; overflow-x: auto; font-size: 0.8rem; }
-        .speaker-node { display: flex; align-items: center; gap: 5px; background: var(--glass); padding: 5px 10px; border-radius: 20px; }
-        .speaking { border: 1px solid #4ade80; color: #4ade80; }
 
-        /* إشعار الحظر */
-        #ban-alert {
-            position: fixed; top: 80px; width: 100%; display: none; justify-content: center; z-index: 2000;
-            animation: slideDown 0.5s ease;
+        /* واجهة الدخول */
+        #auth-screen {
+            position: fixed; inset: 0; z-index: 9999; background: radial-gradient(circle at center, #1a1030, #050505);
+            display: flex; align-items: center; justify-content: center; padding: 20px;
         }
-        .ban-msg { background: var(--danger); color: white; padding: 15px 40px; border-radius: 50px; font-weight: bold; box-shadow: 0 10px 30px rgba(239, 68, 68, 0.4); }
-
-        /* تطبيق التشات */
-        .main-container { display: flex; height: 100vh; padding-top: 80px; }
-        
-        /* القائمة الجانبية */
-        .sidebar { width: 80px; display: flex; flex-direction: column; align-items: center; gap: 20px; padding: 20px 0; border-left: 1px solid var(--glass); }
-        .side-icon { font-size: 1.5rem; color: var(--gold); cursor: pointer; opacity: 0.7; }
-        .side-icon:hover { opacity: 1; }
-
-        /* منطقة المحادثة */
-        .chat-section { flex-grow: 1; display: flex; flex-direction: column; position: relative; }
-        #chat-window { flex-grow: 1; overflow-y: auto; padding: 20px; display: flex; flex-direction: column; gap: 15px; }
-
-        /* فقاعات الرسائل */
-        .msg-wrapper { max-width: 80%; position: relative; }
-        .msg-mine { align-self: flex-end; }
-        .msg-others { align-self: flex-start; }
-        
-        .msg-bubble { 
-            padding: 12px 18px; border-radius: 18px; font-size: 0.95rem; position: relative;
-            background: var(--glass); border: 1px solid rgba(255,255,255,0.05);
+        .auth-box {
+            background: var(--card); border: 1px solid var(--gold); padding: 30px;
+            border-radius: 25px; width: 100%; max-width: 400px; text-align: center;
+            box-shadow: 0 0 30px rgba(212, 175, 55, 0.1);
         }
-        .msg-mine .msg-bubble { background: linear-gradient(135deg, #1e1e24, #111); border-right: 3px solid var(--gold); }
-        
-        .msg-info { font-size: 0.7rem; color: var(--gold); margin-bottom: 4px; display: flex; justify-content: space-between; gap: 10px; }
-        .edited-tag { font-size: 0.6rem; opacity: 0.5; font-style: italic; }
-        
-        .msg-ops { position: absolute; top: 0; left: -25px; cursor: pointer; opacity: 0; }
-        .msg-wrapper:hover .msg-ops { opacity: 1; }
+        .auth-box input {
+            width: 100%; padding: 12px; margin: 10px 0; border-radius: 12px;
+            border: 1px solid var(--gold); background: var(--input-bg); color: white; outline: none;
+        }
+        .auth-box input::placeholder { color: #aaa; }
+        .btn-gold {
+            background: linear-gradient(135deg, var(--gold), #8a6d3b);
+            color: black; border: none; padding: 12px 30px; border-radius: 12px;
+            font-weight: bold; cursor: pointer; width: 100%; margin-top: 10px;
+        }
 
-        /* قائمة منبثقة */
-        .context-menu { position: fixed; background: #15151a; border: 1px solid var(--gold); border-radius: 10px; display: none; z-index: 5000; overflow: hidden; width: 180px; }
-        .menu-item { padding: 12px 15px; font-size: 0.9rem; cursor: pointer; display: flex; align-items: center; gap: 10px; }
-        .menu-item:hover { background: var(--gold); color: #000; }
+        /* الهيكل الرئيسي */
+        .app-container {
+            display: flex; flex-direction: column; height: 100vh; width: 100%;
+        }
+
+        /* شريط الاتصال */
+        .voice-header {
+            background: rgba(0, 0, 0, 0.8); border-bottom: 1px solid var(--gold);
+            padding: 10px 15px; display: flex; align-items: center; gap: 10px; overflow-x: auto;
+        }
+        .speaker-tag {
+            background: var(--input-bg); border: 1px solid var(--gold);
+            padding: 5px 12px; border-radius: 20px; font-size: 0.8rem; white-space: nowrap;
+        }
+        .speaker-tag.active { border-color: #4ade80; box-shadow: 0 0 10px #4ade8055; }
+
+        /* منطقة الشات */
+        .main-content { display: flex; flex: 1; overflow: hidden; position: relative; }
+        
+        #chat-flow {
+            flex: 1; overflow-y: auto; padding: 15px; display: flex; flex-direction: column; gap: 12px;
+            background: url('https://www.transparenttextures.com/patterns/dark-matter.png');
+        }
+
+        /* الفقاعات */
+        .msg-container { max-width: 85%; position: relative; animation: fadeIn 0.3s ease; }
+        @keyframes fadeIn { from { opacity: 0; transform: translateY(5px); } to { opacity: 1; transform: translateY(0); } }
+        
+        .owner-tag {
+            color: var(--gold); font-weight: bold; font-size: 0.8rem;
+            text-shadow: 0 0 8px var(--gold); animation: shine 2s infinite;
+        }
+        @keyframes shine { 0% { opacity: 0.8; } 50% { opacity: 1; text-shadow: 0 0 15px var(--gold); } 100% { opacity: 0.8; } }
+
+        .bubble {
+            padding: 12px; border-radius: 18px; font-size: 0.95rem; line-height: 1.4;
+            background: rgba(255,255,255,0.05); border: 1px solid rgba(212,175,55,0.1);
+        }
+        .mine { align-self: flex-end; }
+        .mine .bubble { background: linear-gradient(135deg, #2d1b4d, #1a1030); border-right: 3px solid var(--gold); }
+        .others { align-self: flex-start; }
+
+        .banned-msg { text-decoration: line-through; opacity: 0.5; color: var(--danger) !important; }
+
+        /* الأزرار الجانبية */
+        .side-bar {
+            width: 60px; background: rgba(0,0,0,0.5); border-left: 1px solid rgba(255,255,255,0.1);
+            display: flex; flex-direction: column; align-items: center; padding: 20px 0; gap: 25px;
+        }
+        .side-btn { font-size: 1.4rem; color: var(--gold); cursor: pointer; position: relative; }
 
         /* شريط الإدخال */
-        .input-bar { padding: 20px; display: flex; gap: 15px; align-items: center; background: rgba(0,0,0,0.3); }
-        #msg-input { flex-grow: 1; background: var(--glass); border: 1px solid var(--glass); padding: 15px; border-radius: 15px; color: white; outline: none; }
-        #msg-input:focus { border-color: var(--gold); }
+        .footer-bar {
+            padding: 10px 15px; background: #000; display: flex; gap: 10px; align-items: center;
+            border-top: 1px solid rgba(255,255,255,0.1);
+        }
+        #msg-input {
+            flex: 1; background: var(--input-bg); border: 1px solid var(--gold);
+            padding: 12px; border-radius: 15px; color: white; outline: none;
+        }
+        .send-btn {
+            background: var(--gold); color: black; width: 45px; height: 45px;
+            border-radius: 12px; border: none; font-size: 1.2rem;
+        }
 
-        /* المودالات (البروفايل، الحظر، الخاص) */
-        .modal { position: fixed; inset: 0; background: rgba(0,0,0,0.9); z-index: 10000; display: none; align-items: center; justify-content: center; }
-        .modal-content { width: 90%; max-width: 500px; padding: 30px; border: 1px solid var(--gold); }
+        /* قائمة الخيارات */
+        .context-menu {
+            position: fixed; background: #1a1a20; border: 1px solid var(--gold);
+            border-radius: 12px; z-index: 10000; display: none; min-width: 160px; overflow: hidden;
+        }
+        .menu-item { padding: 12px 15px; cursor: pointer; font-size: 0.9rem; display: flex; align-items: center; gap: 10px; }
+        .menu-item:hover { background: var(--gold); color: black; }
 
-        .banned-name { text-decoration: line-through; color: #666; }
-        .prev-banned { font-size: 0.6rem; color: var(--danger); display: block; }
-
-        @keyframes slideDown { from { transform: translateY(-100px); } to { transform: translateY(0); } }
+        .modal { position: fixed; inset: 0; background: rgba(0,0,0,0.9); z-index: 10001; display: none; align-items: center; justify-content: center; padding: 20px; }
     </style>
 </head>
 <body>
 
-    <div id="ban-alert"><div class="ban-msg" id="ban-text"></div></div>
-
-    <div id="voice-bar" class="glass-panel">
-        <div style="display:flex; align-items:center; gap:15px">
-            <button id="btn-join-voice" class="btn-luxury"><i class="fas fa-phone"></i> دخول الاتصال</button>
-            <button id="btn-mute" class="btn-luxury" style="display:none; background:#444; color:white"><i class="fas fa-microphone"></i></button>
-        </div>
-        <div class="speaker-list" id="speakers">
-            </div>
-    </div>
-
-    <div class="main-container">
-        <div class="sidebar">
-            <i class="fas fa-user side-icon" onclick="openProfile()" title="الملف الشخصي"></i>
-            <i class="fas fa-comment-alt side-icon" onclick="openPrivateSearch()" title="رسالة خاصة"></i>
-            <i class="fas fa-user-slash side-icon" onclick="openBannedList()" title="قائمة المحظورين"></i>
-            <div style="flex-grow:1"></div>
-            <i class="fas fa-power-off side-icon" style="color:var(--danger)" onclick="logout()"></i>
-        </div>
-
-        <div class="chat-section">
-            <div id="chat-window"></div>
-            
-            <div id="reply-box" style="display:none; padding:10px 20px; background:rgba(212,175,55,0.1); border-top:1px solid var(--gold); display:none; justify-content:space-between">
-                <span id="reply-text" style="font-size:0.8rem"></span>
-                <i class="fas fa-times" onclick="cancelReply()"></i>
-            </div>
-
-            <div class="input-bar">
-                <input type="text" id="msg-input" placeholder="اكتب شي... ">
-                <button class="btn-luxury" onclick="handleSend()"><i class="fas fa-paper-plane"></i></button>
+    <div id="auth-screen">
+        <div class="auth-box">
+            <h2 style="color:var(--gold)">REZA LUXURY</h2>
+            <div id="auth-inputs">
+                <input type="text" id="user-id" placeholder="اسم المستخدم (Unique ID)">
+                <input type="text" id="user-display" placeholder="الاسم الظاهر">
+                <input type="password" id="user-pass" placeholder="كلمة المرور">
+                <button class="btn-gold" onclick="attemptLogin()">دخول المملكة</button>
             </div>
         </div>
     </div>
 
-    <div id="ctx-menu" class="context-menu">
-        <div class="menu-item" onclick="actReply()"><i class="fas fa-reply"></i> رد على الرسالة</div>
-        <div class="menu-item" onclick="actViewProfile()"><i class="fas fa-user-circle"></i> عرض الملف الشخصي</div>
-        <div class="menu-item" onclick="actEdit()" id="opt-edit"><i class="fas fa-edit"></i> تعديل الرسالة</div>
-        <div class="menu-item" onclick="actDelete()" id="opt-del" style="color:var(--danger)"><i class="fas fa-trash"></i> حذف</div>
-        <div class="menu-item" onclick="actBan()" id="opt-ban" style="color:var(--danger); display:none"><i class="fas fa-ban"></i> حظر المستخدم</div>
-    </div>
+    <div class="app-container">
+        <div class="voice-header" id="voice-header">
+            <button class="btn-gold" id="btn-call" style="width:auto; padding:5px 15px"><i class="fas fa-phone"></i> دخول</button>
+            <button class="btn-gold" id="btn-exit-call" style="display:none; background:var(--danger); color:white; width:auto; padding:5px 15px">خروج</button>
+            <div id="voice-users" style="display:flex; gap:8px"></div>
+        </div>
 
-    <div id="modal-profile" class="modal">
-        <div class="modal-content glass-panel">
-            <h2 id="prof-title" style="color:var(--gold)">الملف الشخصي</h2>
-            <div id="prof-view-only">
-                <p id="prof-bio-display"></p>
-                <button class="btn-luxury" onclick="closeModals()">إغلاق</button>
-            </div>
-            <div id="prof-edit-form" style="display:none">
-                <input type="text" id="edit-name" class="input-bar" style="width:100%; margin-bottom:10px" placeholder="الاسم الجديد">
-                <textarea id="edit-bio" maxlength="255" class="input-bar" style="width:100%; height:80px; margin-bottom:10px" placeholder="البايو (255 حرف)"></textarea>
-                <input type="password" id="edit-pass" class="input-bar" style="width:100%; margin-bottom:10px" placeholder="كلمة المرور الجديدة">
-                <button class="btn-luxury" onclick="saveProfile()">حفظ التعديلات</button>
-                <button class="btn-luxury" style="background:#444; color:white" onclick="closeModals()">إلغاء</button>
+        <div class="main-content">
+            <div id="chat-flow"></div>
+
+            <div class="side-bar">
+                <i class="fas fa-user-circle side-btn" onclick="openProfile()"></i>
+                <i class="fas fa-user-slash side-btn" onclick="showBannedList()"></i>
+                <i class="fas fa-sign-out-alt side-btn" style="color:var(--danger)" onclick="location.reload()"></i>
             </div>
         </div>
-    </div>
 
-    <div id="modal-banned" class="modal">
-        <div class="modal-content glass-panel">
-            <h2 style="color:var(--danger)">قائمة المحظورين</h2>
-            <div id="banned-list-container" style="max-height:300px; overflow-y:auto; margin-bottom:20px"></div>
-            <button class="btn-luxury" onclick="closeModals()">إغلاق</button>
+        <div id="rep-preview" style="display:none; background:rgba(212,175,55,0.1); padding:5px 20px; font-size:0.8rem; border-top:1px solid var(--gold)">
+            <span>الرد على: <b id="rep-name"></b></span>
+            <i class="fas fa-times" style="float:left" onclick="cancelReply()"></i>
+        </div>
+
+        <div class="footer-bar">
+            <input type="text" id="msg-input" placeholder="اكتب رسالتك...">
+            <button class="send-btn" onclick="sendMessage()"><i class="fas fa-paper-plane"></i></button>
         </div>
     </div>
 
-    <div id="modal-private" class="modal">
-        <div class="modal-content glass-panel">
-            <h2 style="color:var(--gold)">مراسلة خاصة</h2>
-            <input type="text" id="search-user" class="input-bar" style="width:100%; margin-bottom:10px" placeholder="ابحث باليوزر أو الاسم..." oninput="searchUsers(this.value)">
-            <div id="search-results" style="max-height:250px; overflow-y:auto"></div>
-            <button class="btn-luxury" style="margin-top:10px" onclick="closeModals()">إغلاق</button>
+    <div id="msg-menu" class="context-menu">
+        <div class="menu-item" onclick="prepareReply()"><i class="fas fa-reply"></i> رد</div>
+        <div class="menu-item" onclick="viewProfile()"><i class="fas fa-address-card"></i> الملف الشخصي</div>
+        <div id="my-ops" style="display:none; border-top:1px solid #333">
+            <div class="menu-item" onclick="startEdit()"><i class="fas fa-edit"></i> تعديل</div>
+            <div class="menu-item" style="color:var(--danger)" onclick="deleteMsg()"><i class="fas fa-trash"></i> حذف</div>
+        </div>
+        <div id="admin-ops" style="display:none; border-top:1px solid #333">
+            <div class="menu-item" style="color:var(--danger)" onclick="banUser()"><i class="fas fa-ban"></i> حظر (المالك)</div>
         </div>
     </div>
 
-    <div id="auth-screen" class="modal" style="display:flex; background:var(--bg)">
-        <div class="modal-content glass-panel" style="text-align:center">
-            <h1 style="color:var(--gold)">REZA LUXURY</h1>
-            <div id="auth-form">
-                <input type="text" id="auth-u" class="input-bar" style="width:100%; margin-bottom:10px" placeholder="اسم المستخدم">
-                <input type="password" id="auth-p" class="input-bar" style="width:100%; margin-bottom:10px" placeholder="كلمة المرور">
-                <button class="btn-luxury" style="width:100%" onclick="login()">دخول / تسجيل</button>
+    <div id="modal-p" class="modal" onclick="this.style.display='none'">
+        <div class="auth-box" onclick="event.stopPropagation()">
+            <i class="fas fa-crown" style="font-size:3rem; color:var(--gold)"></i>
+            <h3 id="p-name"></h3>
+            <p id="p-bio" style="color:#aaa"></p>
+            <div id="my-edit-fields" style="display:none">
+                <input type="text" id="new-name" placeholder="تغيير الاسم">
+                <textarea id="new-bio" style="width:100%; background:var(--input-bg); color:white; border:1px solid var(--gold); border-radius:12px; padding:10px" placeholder="البايو..."></textarea>
+                <button class="btn-gold" onclick="updateMyProfile()">حفظ</button>
             </div>
         </div>
     </div>
@@ -187,7 +192,6 @@
         import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js";
         import { getDatabase, ref, set, get, push, onValue, query, limitToLast, remove, update, serverTimestamp } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-database.js";
 
-        // إعدادات Firebase
         const firebaseConfig = {
             apiKey: "AIzaSyBvGWF0u83mrdtBTLWgGV-ExuO6-4j-1Xk",
             authDomain: "reza-3d325.firebaseapp.com",
@@ -197,306 +201,172 @@
 
         const app = initializeApp(firebaseConfig);
         const db = getDatabase(app);
-        
-        let user = null;
-        let activeMsg = null;
-        let isEditing = false;
-        let replyTo = null;
-        let peer = null;
-        let localStream = null;
+        let me = null, activeMsg = null, isEdit = false, replyData = null;
+        let peer = null, localStream = null;
 
-        // --- نظام الحماية والمصادقة ---
-        window.login = async () => {
-            const u = document.getElementById('auth-u').value.trim().toLowerCase();
-            const p = document.getElementById('auth-p').value;
-            if(!u || !p) return;
+        // --- نظام الدخول ---
+        window.attemptLogin = async () => {
+            const uid = document.getElementById('user-id').value.trim().toLowerCase();
+            const name = document.getElementById('user-display').value.trim();
+            const pass = document.getElementById('user-pass').value;
 
-            const snap = await get(ref(db, `users/${u}`));
+            if(!uid || !pass) return alert("يرجى ملء البيانات");
+
+            const snap = await get(ref(db, 'users/' + uid));
             if(snap.exists()) {
-                if(snap.val().isBanned) return alert("أنت محظور من دخول هذا العالم.");
-                if(snap.val().pass === p) {
-                    user = snap.val();
-                } else return alert("كلمة المرور خاطئة");
+                if(snap.val().isBanned) return alert("عذراً، أنت محظور من دخول الشات.");
+                if(snap.val().pass === pass) {
+                    me = snap.val();
+                } else return alert("كلمة المرor خاطئة");
             } else {
-                user = { user: u, name: u, pass: p, bio: "عضو جديد في النخبة", wasBanned: false };
-                await set(ref(db, `users/${u}`), user);
+                me = { user: uid, name: name || uid, pass, bio: "أنا هنا في مملكة رضا", isOwner: uid === 'reza' };
+                await set(ref(db, 'users/' + uid), me);
             }
-            startApp();
+            document.getElementById('auth-screen').style.display = 'none';
+            startChat();
         };
 
-        function startApp() {
-            document.getElementById('auth-screen').style.display = 'none';
-            listenMessages();
-            listenBans();
-            initVoice();
-        }
-
-        // --- إدارة الرسائل ---
-        function listenMessages() {
-            onValue(query(ref(db, 'messages'), limitToLast(50)), (snap) => {
-                const win = document.getElementById('chat-window');
-                win.innerHTML = '';
+        // --- الشات والرسائل ---
+        function startChat() {
+            onValue(query(ref(db, 'messages'), limitToLast(40)), snap => {
+                const flow = document.getElementById('chat-flow');
+                flow.innerHTML = '';
                 snap.forEach(child => {
                     const m = child.val();
-                    renderMsg(m, child.key, win);
+                    if(!m) return;
+                    const isMine = m.uid === me.user;
+                    const div = document.createElement('div');
+                    div.className = `msg-container ${isMine ? 'mine' : 'others'}`;
+                    
+                    const time = m.time ? new Date(m.time).toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'}) : '';
+                    
+                    div.innerHTML = `
+                        <div style="font-size:0.7rem; margin-bottom:3px">
+                            ${m.uid === 'reza' ? '<span class="owner-tag">المالك 👑</span>' : ''}
+                            <span style="color:#aaa">${m.name}</span>
+                            <span style="font-size:0.6rem; opacity:0.5; margin-right:5px">${time}</span>
+                        </div>
+                        <div class="bubble ${m.banned ? 'banned-msg' : ''}" onclick="openMenu(event, '${child.key}', ${JSON.stringify(m).replace(/"/g, '&quot;')})">
+                            ${m.reply ? `<div style="font-size:0.7rem; color:var(--gold); border-right:2px solid; padding-right:5px; margin-bottom:5px">رد على ${m.reply.name}: ${m.reply.txt}</div>` : ''}
+                            ${m.txt}
+                            ${m.isEdited ? '<span style="font-size:0.6rem; opacity:0.5"> (مُعدلة)</span>' : ''}
+                        </div>
+                    `;
+                    flow.appendChild(div);
                 });
-                win.scrollTop = win.scrollHeight;
+                flow.scrollTop = flow.scrollHeight;
             });
         }
 
-        function renderMsg(m, id, container) {
-            const isMine = m.uid === user.user;
-            const div = document.createElement('div');
-            div.className = `msg-wrapper ${isMine ? 'msg-mine' : 'msg-others'}`;
-            
-            // التحقق من الحظر المسبق للمرسل
-            get(ref(db, `users/${m.uid}`)).then(uSnap => {
-                const uData = uSnap.val();
-                const nameStyle = uData.wasBanned ? 'text-decoration:line-through; color:#888' : '';
-                const prevTag = uData.wasBanned ? '<span class="prev-banned">محظور مسبقاً</span>' : '';
-
-                div.innerHTML = `
-                    <div class="msg-info">
-                        <span style="${nameStyle}">${m.name} ${prevTag}</span>
-                        <span>${new Date(m.time).toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'})}</span>
-                    </div>
-                    <div class="msg-bubble" onclick="showMsgMenu(event, '${id}', '${m.uid}', '${m.name}', '${m.txt}')">
-                        ${m.reply ? `<div style="font-size:0.7rem; border-right:2px solid var(--gold); padding-right:5px; margin-bottom:5px; opacity:0.6">رد على ${m.reply.name}: ${m.reply.txt}</div>` : ''}
-                        ${m.txt}
-                        ${m.edited ? '<span class="edited-tag"> (معدلة)</span>' : ''}
-                    </div>
-                `;
-            });
-            container.appendChild(div);
-        }
-
-        window.handleSend = () => {
-            const inp = document.getElementById('msg-input');
-            const txt = inp.value.trim();
+        window.sendMessage = () => {
+            const txt = document.getElementById('msg-input').value.trim();
             if(!txt) return;
 
-            if(isEditing) {
-                update(ref(db, `messages/${activeMsg.id}`), { txt: txt, edited: true });
-                isEditing = false;
+            if(isEdit) {
+                update(ref(db, `messages/${activeMsg.id}`), { txt, isEdited: true });
+                isEdit = false;
                 activeMsg = null;
             } else {
-                const data = {
-                    uid: user.user,
-                    name: user.name,
-                    txt: txt,
-                    time: serverTimestamp()
-                };
-                if(replyTo) data.reply = replyTo;
+                const data = { uid: me.user, name: me.name, txt, time: serverTimestamp() };
+                if(replyData) data.reply = replyData;
                 push(ref(db, 'messages'), data);
             }
-            inp.value = '';
+            document.getElementById('msg-input').value = '';
             cancelReply();
         };
 
-        // --- القائمة المنبثقة للرسائل ---
-        window.showMsgMenu = (e, id, uid, name, txt) => {
-            activeMsg = { id, uid, name, txt };
-            const menu = document.getElementById('ctx-menu');
+        // --- القائمة والعمليات ---
+        window.openMenu = (e, id, m) => {
+            activeMsg = { id, ...m };
+            const menu = document.getElementById('msg-menu');
             menu.style.display = 'block';
             menu.style.top = e.clientY + 'px';
             menu.style.left = e.clientX + 'px';
 
-            // تحكم الصلاحيات
-            document.getElementById('opt-edit').style.display = (uid === user.user) ? 'flex' : 'none';
-            document.getElementById('opt-del').style.display = (uid === user.user || user.user === 'reza') ? 'flex' : 'none';
-            document.getElementById('opt-ban').style.display = (user.user === 'reza' && uid !== 'reza') ? 'flex' : 'none';
+            document.getElementById('my-ops').style.display = (m.uid === me.user) ? 'block' : 'none';
+            document.getElementById('admin-ops').style.display = (me.user === 'reza' && m.uid !== 'reza') ? 'block' : 'none';
         };
 
-        window.actReply = () => {
-            replyTo = { name: activeMsg.name, txt: activeMsg.txt };
-            document.getElementById('reply-box').style.display = 'flex';
-            document.getElementById('reply-text').innerText = `رد على: ${activeMsg.name}`;
-            closeCtx();
-        };
-
-        window.actEdit = () => {
-            isEditing = true;
+        window.startEdit = () => {
+            isEdit = true;
             document.getElementById('msg-input').value = activeMsg.txt;
             document.getElementById('msg-input').focus();
-            closeCtx();
+            closeMenu();
         };
 
-        window.actDelete = () => {
-            if(confirm("حذف هذه الرسالة نهائياً؟")) remove(ref(db, `messages/${activeMsg.id}`));
-            closeCtx();
+        window.deleteMsg = () => {
+            remove(ref(db, `messages/${activeMsg.id}`));
+            closeMenu();
         };
 
-        window.actBan = async () => {
-            const target = activeMsg.uid;
-            await update(ref(db, `users/${target}`), { isBanned: true, wasBanned: true });
-            // إرسال إشعار عالمي
-            const pushRef = push(ref(db, 'alerts'));
-            set(pushRef, { txt: `تم حظر المستخدم (${target})`, time: serverTimestamp() });
-            closeCtx();
+        window.banUser = async () => {
+            await update(ref(db, `users/${activeMsg.uid}`), { isBanned: true });
+            alert(`تم حظر ${activeMsg.name} نهائياً`);
+            closeMenu();
         };
 
-        // --- نظام الحظر والإشعارات ---
-        function listenBans() {
-            onValue(query(ref(db, 'alerts'), limitToLast(1)), snap => {
-                snap.forEach(child => {
-                    const alert = child.val();
-                    const el = document.getElementById('ban-alert');
-                    document.getElementById('ban-text').innerText = alert.txt;
-                    el.style.display = 'flex';
-                    setTimeout(() => el.style.display = 'none', 20000);
-                });
-            });
-        }
-
-        window.openBannedList = async () => {
-            const snap = await get(ref(db, 'users'));
-            const container = document.getElementById('banned-list-container');
-            container.innerHTML = '';
-            snap.forEach(uSnap => {
-                const u = uSnap.val();
-                if(u.isBanned) {
-                    const div = document.createElement('div');
-                    div.className = 'menu-item';
-                    div.style.justifyContent = 'space-between';
-                    div.innerHTML = `<span>${u.name} (@${u.user})</span>`;
-                    if(user.user === 'reza') {
-                        const btn = document.createElement('button');
-                        btn.className = 'btn-luxury';
-                        btn.innerText = 'إلغاء الحظر';
-                        btn.onclick = () => update(ref(db, `users/${u.user}`), { isBanned: false });
-                        div.appendChild(btn);
-                    }
-                    container.appendChild(div);
-                }
-            });
-            document.getElementById('modal-banned').style.display = 'flex';
-        };
-
-        // --- الملف الشخصي ---
-        window.openProfile = () => {
-            document.getElementById('prof-title').innerText = "تعديل ملفي الشخصي";
-            document.getElementById('prof-view-only').style.display = 'none';
-            document.getElementById('prof-edit-form').style.display = 'block';
-            document.getElementById('edit-name').value = user.name;
-            document.getElementById('edit-bio').value = user.bio || "";
-            document.getElementById('modal-profile').style.display = 'flex';
-        };
-
-        window.actViewProfile = async () => {
-            const snap = await get(ref(db, `users/${activeMsg.uid}`));
-            const uData = snap.val();
-            document.getElementById('prof-title').innerText = uData.name;
-            document.getElementById('prof-bio-display').innerText = uData.bio || "لا يوجد بايو";
-            document.getElementById('prof-view-only').style.display = 'block';
-            document.getElementById('prof-edit-form').style.display = 'none';
-            document.getElementById('modal-profile').style.display = 'flex';
-            closeCtx();
-        };
-
-        window.saveProfile = async () => {
-            const newName = document.getElementById('edit-name').value;
-            const newBio = document.getElementById('edit-bio').value;
-            const newPass = document.getElementById('edit-pass').value;
-            
-            const updates = { name: newName, bio: newBio };
-            if(newPass) updates.pass = newPass;
-
-            await update(ref(db, `users/${user.user}`), updates);
-            user = { ...user, ...updates };
-            alert("تم التحديث بنجاح");
-            closeModals();
-        };
-
-        // --- الاتصال الجماعي (WebRTC) ---
-        function initVoice() {
-            peer = new Peer(user.user);
-            
-            document.getElementById('btn-join-voice').onclick = async () => {
+        // --- نظام الصوت المطور ---
+        document.getElementById('btn-call').onclick = async () => {
+            try {
                 localStream = await navigator.mediaDevices.getUserMedia({ audio: true });
-                document.getElementById('btn-join-voice').style.display = 'none';
-                document.getElementById('btn-mute').style.display = 'block';
+                peer = new Peer(me.user);
                 
-                // تسجيل الدخول للغرفة الصوتية في Firebase
-                set(ref(db, `voice_active/${user.user}`), { name: user.name, isMuted: false });
-                
-                // استقبال المكالمات
+                peer.on('open', () => {
+                    set(ref(db, `voice_active/${me.user}`), { name: me.name });
+                    document.getElementById('btn-call').style.display = 'none';
+                    document.getElementById('btn-exit-call').style.display = 'block';
+                });
+
                 peer.on('call', call => {
                     call.answer(localStream);
-                    handleStream(call);
+                    setupAudio(call);
                 });
 
-                // الاتصال بجميع الموجودين
-                const active = await get(ref(db, 'voice_active'));
-                active.forEach(u => {
-                    if(u.key !== user.user) {
-                        const call = peer.call(u.key, localStream);
-                        handleStream(call);
+                const snap = await get(ref(db, 'voice_active'));
+                snap.forEach(child => {
+                    if(child.key !== me.user) {
+                        const call = peer.call(child.key, localStream);
+                        setupAudio(call);
                     }
                 });
-            };
 
-            document.getElementById('btn-mute').onclick = () => {
-                const audioTrack = localStream.getAudioTracks()[0];
-                audioTrack.enabled = !audioTrack.enabled;
-                document.getElementById('btn-mute').innerHTML = audioTrack.enabled ? '<i class="fas fa-microphone"></i>' : '<i class="fas fa-microphone-slash" style="color:red"></i>';
-                update(ref(db, `voice_active/${user.user}`), { isMuted: !audioTrack.enabled });
-            };
-
-            onValue(ref(db, 'voice_active'), snap => {
-                const list = document.getElementById('speakers');
-                list.innerHTML = '';
-                snap.forEach(child => {
-                    const u = child.val();
-                    const node = document.createElement('div');
-                    node.className = `speaker-node ${!u.isMuted ? 'speaking' : ''}`;
-                    node.innerHTML = `<i class="fas fa-user"></i> ${u.name} ${u.isMuted ? '(مكتوم)' : ''}`;
-                    list.appendChild(node);
+                onValue(ref(db, 'voice_active'), s => {
+                    const box = document.getElementById('voice-users');
+                    box.innerHTML = '';
+                    s.forEach(c => {
+                        box.innerHTML += `<div class="speaker-tag active">${c.val().name}</div>`;
+                    });
                 });
-            });
-        }
+            } catch(e) { alert("يرجى تفعيل صلاحية المايك"); }
+        };
 
-        function handleStream(call) {
-            call.on('stream', remoteStream => {
+        function setupAudio(call) {
+            call.on('stream', stream => {
                 const audio = new Audio();
-                audio.srcObject = remoteStream;
-                audio.play();
+                audio.srcObject = stream;
+                audio.autoplay = true;
+                audio.play(); // لضمان العمل على الموبايل
             });
         }
 
-        // --- المراسلة الخاصة ---
-        window.openPrivateSearch = () => {
-            document.getElementById('modal-private').style.display = 'flex';
+        document.getElementById('btn-exit-call').onclick = () => {
+            remove(ref(db, `voice_active/${me.user}`));
+            if(peer) peer.destroy();
+            if(localStream) localStream.getTracks().forEach(t => t.stop());
+            location.reload();
         };
 
-        window.searchUsers = async (val) => {
-            if(val.length < 2) return;
-            const snap = await get(ref(db, 'users'));
-            const res = document.getElementById('search-results');
-            res.innerHTML = '';
-            snap.forEach(uSnap => {
-                const u = uSnap.val();
-                if(u.user !== user.user && (u.user.includes(val) || u.name.includes(val))) {
-                    const d = document.createElement('div');
-                    d.className = 'menu-item';
-                    d.innerHTML = `<span>${u.name} (@${u.user})</span> <i class="fas fa-paper-plane"></i>`;
-                    d.onclick = () => startPrivateChat(u.user);
-                    res.appendChild(d);
-                }
-            });
+        // وظائف مساعدة
+        window.closeMenu = () => document.getElementById('msg-menu').style.display = 'none';
+        window.prepareReply = () => { replyData = { name: activeMsg.name, txt: activeMsg.txt }; document.getElementById('rep-preview').style.display = 'block'; document.getElementById('rep-name').innerText = activeMsg.name; closeMenu(); };
+        window.cancelReply = () => { replyData = null; document.getElementById('rep-preview').style.display = 'none'; };
+        window.openProfile = () => { 
+            document.getElementById('modal-p').style.display = 'flex'; 
+            document.getElementById('p-name').innerText = me.name;
+            document.getElementById('p-bio').innerText = me.bio;
+            document.getElementById('my-edit-fields').style.display = 'block';
         };
-
-        function startPrivateChat(targetUid) {
-            const chatId = [user.user, targetUid].sort().join("_");
-            alert(`سيتم فتح محادثة خاصة: ${chatId} (قريباً في التحديث القادم)`);
-        }
-
-        // أدوات مساعدة
-        window.closeModals = () => document.querySelectorAll('.modal').forEach(m => m.style.display = 'none');
-        window.cancelReply = () => { replyTo = null; document.getElementById('reply-box').style.display = 'none'; };
-        function closeCtx() { document.getElementById('ctx-menu').style.display = 'none'; }
-        window.logout = () => { location.reload(); };
-
-        document.addEventListener('click', e => { if(!e.target.closest('.msg-bubble')) closeCtx(); });
+        document.addEventListener('click', e => { if(!e.target.closest('.bubble')) closeMenu(); });
     </script>
 </body>
 </html>
