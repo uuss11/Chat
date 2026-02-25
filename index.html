@@ -3,314 +3,654 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
-    <title>REZA Luxury Chat</title>
-    <script src="https://unpkg.com/peerjs@1.5.2/dist/peerjs.min.js"></script>
+    <title>REZA | Ultra Chat Experience</title>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
-    <link href="https://fonts.googleapis.com/css2?family=Cairo:wght@400;700&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Cairo:wght@300;400;500;600;700;800&family=Tajawal:wght@400;500;700&display=swap" rel="stylesheet">
     <style>
         :root {
-            --gold: #d4af37;
-            --bg: #050505;
-            --card: rgba(20, 20, 25, 0.98);
-            --danger: #ff4444;
-            --input-bg: rgba(40, 30, 60, 0.6);
+            --glass-bg: rgba(255, 255, 255, 0.08);
+            --glass-border: rgba(255, 255, 255, 0.18);
+            --glass-shadow: rgba(0, 0, 0, 0.4);
+            --glass-highlight: rgba(255, 255, 255, 0.15);
+            --primary: #00d4ff;
+            --primary-glow: rgba(0, 212, 255, 0.4);
+            --secondary: #7b2cbf;
+            --accent: #ff006e;
+            --bg-gradient-1: #0a0a1a;
+            --bg-gradient-2: #1a0a2e;
+            --bg-gradient-3: #0d1b2a;
+            --text-primary: #ffffff;
+            --text-secondary: rgba(255, 255, 255, 0.7);
+            --text-muted: rgba(255, 255, 255, 0.5);
+            --success: #00f5d4;
+            --warning: #fee440;
+            --danger: #f15bb5;
+            --info: #00bbf9;
         }
 
-        * { box-sizing: border-box; font-family: 'Cairo', sans-serif; -webkit-tap-highlight-color: transparent; }
-        body, html { margin: 0; padding: 0; width: 100%; height: 100%; background: var(--bg); color: white; overflow: hidden; }
+        [data-theme="purple"] { --primary: #e0aaff; --primary-glow: rgba(224, 170, 255, 0.4); --secondary: #7b2cbf; --accent: #c77dff; --bg-gradient-1: #10002b; --bg-gradient-2: #240046; --bg-gradient-3: #3c096c; }
+        [data-theme="sunset"] { --primary: #ff9e00; --primary-glow: rgba(255, 158, 0, 0.4); --secondary: #ff006e; --accent: #ffbe0b; --bg-gradient-1: #1a0a0a; --bg-gradient-2: #2d1b1b; --bg-gradient-3: #3d1515; }
+        [data-theme="emerald"] { --primary: #00f5d4; --primary-glow: rgba(0, 245, 212, 0.4); --secondary: #00bbf9; --accent: #9b5de5; --bg-gradient-1: #0a1a15; --bg-gradient-2: #0d2b1d; --bg-gradient-3: #0a3d2e; }
+        [data-theme="rose"] { --primary: #ff99ac; --primary-glow: rgba(255, 153, 172, 0.4); --secondary: #ff5c8d; --accent: #ff006e; --bg-gradient-1: #1a0a12; --bg-gradient-2: #2d151f; --bg-gradient-3: #3d1525; }
+        [data-theme="gold"] { --primary: #ffd700; --primary-glow: rgba(255, 215, 0, 0.4); --secondary: #b8860b; --accent: #ff8c00; --bg-gradient-1: #1a150a; --bg-gradient-2: #2d2515; --bg-gradient-3: #3d3015; }
 
-        /* واجهة الدخول */
-        #auth-screen { position: fixed; inset: 0; z-index: 9999; background: radial-gradient(circle at center, #1a1030, #050505); display: flex; align-items: center; justify-content: center; padding: 20px; }
-        .auth-box { background: var(--card); border: 1px solid var(--gold); padding: 30px; border-radius: 25px; width: 100%; max-width: 400px; text-align: center; box-shadow: 0 0 30px rgba(212, 175, 55, 0.1); }
-        .auth-box input, .auth-box textarea { width: 100%; padding: 12px; margin: 10px 0; border-radius: 12px; border: 1px solid var(--gold); background: var(--input-bg); color: white; outline: none; }
-        .btn-gold { background: linear-gradient(135deg, var(--gold), #8a6d3b); color: black; border: none; padding: 12px 30px; border-radius: 12px; font-weight: bold; cursor: pointer; width: 100%; margin-top: 10px; }
+        * { box-sizing: border-box; font-family: 'Cairo', 'Tajawal', sans-serif; -webkit-tap-highlight-color: transparent; margin: 0; padding: 0; }
+        body, html { margin: 0; padding: 0; width: 100%; height: 100%; overflow: hidden; }
 
-        /* الهيكل */
-        .app-container { display: flex; flex-direction: column; height: 100dvh; width: 100%; }
-        .voice-header { background: rgba(0, 0, 0, 0.8); border-bottom: 1px solid var(--gold); padding: 10px; display: flex; align-items: center; gap: 10px; }
-        .main-content { display: flex; flex: 1; overflow: hidden; position: relative; }
-        #chat-flow { flex: 1; overflow-y: auto; padding: 15px; display: flex; flex-direction: column; gap: 12px; background: #080808; }
+        .bg-container { position: fixed; inset: 0; background: linear-gradient(135deg, var(--bg-gradient-1), var(--bg-gradient-2), var(--bg-gradient-3)); background-size: 400% 400%; animation: gradientShift 15s ease infinite; z-index: -2; }
+        @keyframes gradientShift { 0%, 100% { background-position: 0% 50%; } 50% { background-position: 100% 50%; } }
 
-        /* الفقاعات والباند */
-        .msg-container { max-width: 85%; position: relative; }
-        .owner-tag { color: var(--gold); font-weight: bold; font-size: 0.75rem; text-shadow: 0 0 5px var(--gold); }
-        .bubble { padding: 12px; border-radius: 18px; font-size: 0.95rem; background: rgba(255,255,255,0.05); border: 1px solid rgba(212,175,55,0.1); position: relative; }
-        .mine { align-self: flex-end; }
-        .mine .bubble { background: linear-gradient(135deg, #2d1b4d, #1a1030); border-right: 3px solid var(--gold); }
-        .others { align-self: flex-start; }
+        .orb { position: fixed; border-radius: 50%; filter: blur(80px); opacity: 0.4; z-index: -1; animation: float 20s ease-in-out infinite; }
+        .orb-1 { width: 400px; height: 400px; background: var(--primary); top: -100px; right: -100px; }
+        .orb-2 { width: 300px; height: 300px; background: var(--secondary); bottom: -50px; left: -50px; animation-delay: -7s; }
+        .orb-3 { width: 250px; height: 250px; background: var(--accent); top: 50%; left: 50%; transform: translate(-50%, -50%); animation-delay: -14s; }
+        @keyframes float { 0%, 100% { transform: translate(0, 0) scale(1); } 25% { transform: translate(30px, -30px) scale(1.1); } 50% { transform: translate(-20px, 20px) scale(0.9); } 75% { transform: translate(-30px, -20px) scale(1.05); } }
+
+        .glass-card { background: var(--glass-bg); backdrop-filter: blur(20px) saturate(180%); -webkit-backdrop-filter: blur(20px) saturate(180%); border: 1px solid var(--glass-border); border-radius: 24px; box-shadow: 0 8px 32px 0 var(--glass-shadow), inset 0 1px 0 0 var(--glass-highlight); }
+        .glass-input { background: rgba(0, 0, 0, 0.3); backdrop-filter: blur(10px); border: 1px solid var(--glass-border); border-radius: 16px; color: var(--text-primary); padding: 14px 18px; font-size: 15px; transition: all 0.3s ease; outline: none; width: 100%; }
+        .glass-input:focus { border-color: var(--primary); box-shadow: 0 0 20px var(--primary-glow); }
+        .glass-input::placeholder { color: var(--text-muted); }
+        .glass-btn { background: linear-gradient(135deg, var(--primary), var(--secondary)); border: none; border-radius: 16px; color: #000; font-weight: 700; padding: 14px 32px; cursor: pointer; transition: all 0.3s ease; position: relative; overflow: hidden; }
+        .glass-btn::before { content: ''; position: absolute; top: 0; left: -100%; width: 100%; height: 100%; background: linear-gradient(90deg, transparent, rgba(255,255,255,0.3), transparent); transition: left 0.5s ease; }
+        .glass-btn:hover::before { left: 100%; }
+        .glass-btn:hover { transform: translateY(-2px); box-shadow: 0 10px 30px var(--primary-glow); }
+        .glass-btn:disabled { opacity: 0.6; cursor: not-allowed; transform: none; }
+
+        #auth-screen { position: fixed; inset: 0; z-index: 9999; display: flex; align-items: center; justify-content: center; padding: 15px; overflow-y: auto; }
+        .auth-box { width: 100%; max-width: 420px; padding: 30px 25px; text-align: center; margin: auto; }
+        .auth-logo { width: 80px; height: 80px; margin: 0 auto 20px; border-radius: 50%; background: linear-gradient(135deg, var(--primary), var(--secondary)); display: flex; align-items: center; justify-content: center; font-size: 2.2rem; color: #000; box-shadow: 0 10px 40px var(--primary-glow); animation: pulse 2s ease-in-out infinite; }
+        @keyframes pulse { 0%, 100% { transform: scale(1); } 50% { transform: scale(1.05); } }
+        .auth-title { font-size: 1.8rem; font-weight: 800; background: linear-gradient(135deg, var(--primary), var(--accent)); -webkit-background-clip: text; -webkit-text-fill-color: transparent; margin-bottom: 8px; }
+        .auth-subtitle { color: var(--text-secondary); font-size: 0.85rem; margin-bottom: 25px; }
+
+        .input-group { margin-bottom: 14px; position: relative; }
+        .input-icon { position: absolute; left: 16px; top: 50%; transform: translateY(-50%); color: var(--primary); font-size: 1.1rem; }
+        .input-group .glass-input { padding-left: 48px; }
+
+        .avatar-section { margin: 20px 0; padding: 15px; border-radius: 20px; background: rgba(0, 0, 0, 0.2); border: 1px dashed var(--glass-border); }
+        .avatar-preview-container { width: 100px; height: 100px; margin: 0 auto 12px; position: relative; }
+        .avatar-preview { width: 100%; height: 100%; border-radius: 50%; object-fit: cover; border: 3px solid var(--primary); box-shadow: 0 0 30px var(--primary-glow); transition: all 0.3s ease; }
+        .avatar-placeholder { width: 100%; height: 100%; border-radius: 50%; background: linear-gradient(135deg, rgba(255,255,255,0.1), rgba(255,255,255,0.05)); border: 3px dashed var(--glass-border); display: flex; align-items: center; justify-content: center; font-size: 2.5rem; color: var(--text-muted); }
+        .avatar-label { font-size: 0.8rem; color: var(--text-secondary); margin-bottom: 8px; display: block; }
+        .avatar-link-row { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; }
+        .catbox-link { font-size: 0.7rem; color: var(--primary); text-decoration: none; padding: 6px 12px; background: rgba(0, 212, 255, 0.1); border-radius: 8px; white-space: nowrap; transition: all 0.3s ease; }
+        .catbox-link:hover { background: var(--primary); color: #000; }
+        .avatar-hint { font-size: 0.7rem; color: var(--text-muted); margin-top: 6px; }
+
+        .theme-selector { margin: 20px 0; }
+        .theme-label { font-size: 0.8rem; color: var(--text-secondary); margin-bottom: 10px; display: block; }
+        .theme-options { display: flex; justify-content: center; gap: 10px; flex-wrap: wrap; }
+        .theme-option { width: 36px; height: 36px; border-radius: 50%; cursor: pointer; border: 3px solid transparent; transition: all 0.3s ease; }
+        .theme-option:hover { transform: scale(1.1); }
+        .theme-option.active { border-color: #fff; box-shadow: 0 0 20px rgba(255,255,255,0.5); }
+        .theme-option[data-theme="ocean"] { background: linear-gradient(135deg, #00d4ff, #7b2cbf); }
+        .theme-option[data-theme="purple"] { background: linear-gradient(135deg, #e0aaff, #7b2cbf); }
+        .theme-option[data-theme="sunset"] { background: linear-gradient(135deg, #ff9e00, #ff006e); }
+        .theme-option[data-theme="emerald"] { background: linear-gradient(135deg, #00f5d4, #00bbf9); }
+        .theme-option[data-theme="rose"] { background: linear-gradient(135deg, #ff99ac, #ff5c8d); }
+        .theme-option[data-theme="gold"] { background: linear-gradient(135deg, #ffd700, #b8860b); }
+
+        .app-container { display: none; flex-direction: column; height: 100dvh; width: 100%; }
+        .app-header { padding: 10px 15px; display: flex; align-items: center; justify-content: space-between; border-bottom: 1px solid var(--glass-border); background: rgba(0, 0, 0, 0.3); backdrop-filter: blur(20px); flex-shrink: 0; }
+        .header-left { display: flex; align-items: center; gap: 10px; }
+        .header-avatar { width: 42px; height: 42px; border-radius: 50%; object-fit: cover; border: 2px solid var(--primary); box-shadow: 0 0 15px var(--primary-glow); }
+        .header-info h3 { font-size: 0.95rem; color: var(--text-primary); margin: 0; }
+        .header-info span { font-size: 0.7rem; color: var(--success); display: flex; align-items: center; gap: 5px; }
+        .online-dot { width: 7px; height: 7px; background: var(--success); border-radius: 50%; animation: blink 1.5s ease-in-out infinite; }
+        @keyframes blink { 0%, 100% { opacity: 1; } 50% { opacity: 0.5; } }
+        .header-actions { display: flex; gap: 8px; }
+        .header-btn { width: 38px; height: 38px; border-radius: 12px; background: var(--glass-bg); border: 1px solid var(--glass-border); color: var(--primary); display: flex; align-items: center; justify-content: center; cursor: pointer; transition: all 0.3s ease; font-size: 0.95rem; }
+        .header-btn:hover { background: var(--primary); color: #000; transform: scale(1.05); }
+        .header-btn.active { background: var(--primary); color: #000; }
+
+        .search-bar { padding: 8px 15px; background: rgba(0, 0, 0, 0.2); border-bottom: 1px solid var(--glass-border); display: none; animation: slideDown 0.3s ease; }
+        @keyframes slideDown { from { opacity: 0; transform: translateY(-10px); } to { opacity: 1; transform: translateY(0); } }
+        .search-input-wrapper { position: relative; display: flex; align-items: center; gap: 10px; }
+        .search-input-wrapper .glass-input { padding-left: 40px; padding-right: 40px; font-size: 0.85rem; }
+        .search-icon { position: absolute; left: 12px; color: var(--text-muted); }
+        .search-close { position: absolute; right: 12px; color: var(--danger); cursor: pointer; }
+
+        .main-content { display: flex; flex: 1; overflow: hidden; position: relative; min-height: 0; }
         
-        .banned-msg { text-decoration: line-through; opacity: 0.4; color: var(--danger) !important; }
-        .ban-icon { color: var(--danger); margin-left: 5px; font-size: 0.8rem; }
+        .members-sidebar { width: 0; background: rgba(0, 0, 0, 0.4); border-left: 1px solid var(--glass-border); overflow: hidden; transition: width 0.3s ease; display: flex; flex-direction: column; }
+        .members-sidebar.open { width: 220px; }
+        .members-header { padding: 15px; border-bottom: 1px solid var(--glass-border); font-size: 0.9rem; font-weight: 600; color: var(--primary); }
+        .members-list { flex: 1; overflow-y: auto; padding: 10px; }
+        .member-item { display: flex; align-items: center; gap: 10px; padding: 10px; border-radius: 12px; margin-bottom: 8px; transition: all 0.3s ease; cursor: pointer; }
+        .member-item:hover { background: var(--glass-bg); }
+        .member-avatar { width: 36px; height: 36px; border-radius: 50%; object-fit: cover; border: 2px solid var(--primary); }
+        .member-info { flex: 1; }
+        .member-name { font-size: 0.8rem; color: var(--text-primary); font-weight: 600; }
+        .member-status { font-size: 0.65rem; color: var(--success); }
+        .member-owner { font-size: 0.6rem; color: var(--warning); }
 
-        /* الأزرار الجانبية */
-        .side-bar { width: 60px; background: #000; border-left: 1px solid rgba(255,255,255,0.1); display: flex; flex-direction: column; align-items: center; padding: 20px 0; gap: 25px; }
-        .side-btn { font-size: 1.4rem; color: var(--gold); cursor: pointer; }
+        #chat-flow { flex: 1; overflow-y: auto; padding: 15px; display: flex; flex-direction: column; gap: 12px; min-height: 0; }
+        #chat-flow::-webkit-scrollbar { width: 5px; }
+        #chat-flow::-webkit-scrollbar-track { background: transparent; }
+        #chat-flow::-webkit-scrollbar-thumb { background: var(--glass-border); border-radius: 3px; }
 
-        /* قائمة الخيارات (بوسط الشاشة) */
-        .context-overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.7); z-index: 10000; display: none; align-items: center; justify-content: center; }
-        .context-menu { background: #1a1a20; border: 1px solid var(--gold); border-radius: 20px; width: 250px; overflow: hidden; animation: pop 0.2s ease-out; }
-        @keyframes pop { from { transform: scale(0.8); opacity: 0; } to { transform: scale(1); opacity: 1; } }
-        .menu-item { padding: 15px; cursor: pointer; border-bottom: 1px solid #333; display: flex; align-items: center; gap: 12px; }
+        .pinned-message { background: linear-gradient(135deg, rgba(0, 212, 255, 0.2), rgba(123, 44, 191, 0.2)); border: 1px solid var(--primary); border-radius: 16px; padding: 12px 15px; margin-bottom: 10px; position: relative; }
+        .pinned-header { display: flex; align-items: center; gap: 8px; font-size: 0.75rem; color: var(--primary); margin-bottom: 6px; }
+        .pinned-text { font-size: 0.85rem; color: var(--text-primary); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+        .pinned-close { position: absolute; top: 8px; left: 10px; color: var(--text-muted); cursor: pointer; font-size: 0.8rem; }
+
+        .msg-container { max-width: 85%; position: relative; display: flex; flex-direction: column; }
+        .msg-container.mine { align-self: flex-end; align-items: flex-end; }
+        .msg-container.others { align-self: flex-start; align-items: flex-start; }
+        .msg-container.highlighted { animation: highlight 2s ease; }
+        @keyframes highlight { 0%, 100% { background: transparent; } 50% { background: rgba(0, 212, 255, 0.2); border-radius: 20px; } }
+
+        .msg-header { display: flex; align-items: center; gap: 8px; margin-bottom: 4px; }
+        .msg-avatar { width: 34px; height: 34px; border-radius: 50%; object-fit: cover; border: 2px solid transparent; transition: all 0.3s ease; }
+        .msg-container.mine .msg-avatar { border-color: var(--primary); box-shadow: 0 0 10px var(--primary-glow); order: 2; }
+        .msg-container.others .msg-avatar { border-color: var(--secondary); box-shadow: 0 0 10px rgba(123, 44, 191, 0.4); }
+        .msg-sender-info { display: flex; flex-direction: column; }
+        .msg-name { font-size: 0.75rem; font-weight: 600; color: var(--text-primary); }
+        .msg-time { font-size: 0.6rem; color: var(--text-muted); }
+        .owner-badge { display: inline-flex; align-items: center; gap: 4px; background: linear-gradient(135deg, var(--primary), var(--accent)); color: #000; font-size: 0.6rem; font-weight: 700; padding: 2px 6px; border-radius: 8px; margin-right: 4px; }
+        .pinned-badge { color: var(--warning); font-size: 0.7rem; margin-right: 4px; }
+
+        .bubble { padding: 12px 16px; border-radius: 18px; font-size: 0.9rem; line-height: 1.5; position: relative; max-width: 100%; word-wrap: break-word; cursor: pointer; transition: all 0.2s ease; }
+        .bubble:hover { transform: scale(1.01); }
+        .msg-container.mine .bubble { background: linear-gradient(135deg, var(--primary), var(--secondary)); color: #000; border-bottom-right-radius: 4px; box-shadow: 0 5px 20px var(--primary-glow); }
+        .msg-container.others .bubble { background: var(--glass-bg); backdrop-filter: blur(10px); border: 1px solid var(--glass-border); color: var(--text-primary); border-bottom-left-radius: 4px; }
+        .banned-msg { text-decoration: line-through; opacity: 0.4; filter: grayscale(100%); }
+
+        .bubble-image { max-width: 250px; max-height: 200px; border-radius: 12px; cursor: pointer; transition: all 0.3s ease; }
+        .bubble-image:hover { transform: scale(1.02); }
+        .image-caption { font-size: 0.8rem; margin-top: 8px; opacity: 0.9; }
+
+        .reply-preview { font-size: 0.7rem; padding: 8px 10px; margin-bottom: 8px; border-radius: 8px; background: rgba(0, 0, 0, 0.2); border-right: 3px solid var(--accent); }
+        .msg-container.mine .reply-preview { background: rgba(0, 0, 0, 0.15); color: rgba(0, 0, 0, 0.8); border-right-color: #000; }
+        .reply-name { font-weight: 600; opacity: 0.9; }
+        .reply-text { opacity: 0.7; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
+        .msg-reactions { display: flex; gap: 5px; margin-top: 6px; flex-wrap: wrap; }
+        .reaction { background: var(--glass-bg); border: 1px solid var(--glass-border); border-radius: 12px; padding: 3px 8px; font-size: 0.75rem; cursor: pointer; transition: all 0.2s ease; }
+        .reaction:hover { background: var(--primary); transform: scale(1.1); }
+        .reaction.active { background: var(--primary); color: #000; }
+
+        .side-bar { width: 60px; background: rgba(0, 0, 0, 0.3); border-left: 1px solid var(--glass-border); display: flex; flex-direction: column; align-items: center; padding: 15px 0; gap: 12px; backdrop-filter: blur(10px); flex-shrink: 0; }
+        .side-btn { width: 44px; height: 44px; border-radius: 14px; background: var(--glass-bg); border: 1px solid var(--glass-border); color: var(--primary); font-size: 1.1rem; display: flex; align-items: center; justify-content: center; cursor: pointer; transition: all 0.3s ease; position: relative; }
+        .side-btn:hover { background: var(--primary); color: #000; transform: translateY(-3px); box-shadow: 0 10px 25px var(--primary-glow); }
+        .side-btn::after { content: attr(data-label); position: absolute; right: 55px; background: rgba(0, 0, 0, 0.9); color: #fff; padding: 5px 10px; border-radius: 8px; font-size: 0.7rem; white-space: nowrap; opacity: 0; pointer-events: none; transition: all 0.3s ease; }
+        .side-btn:hover::after { opacity: 1; right: 60px; }
+        .side-btn .badge { position: absolute; top: -5px; right: -5px; background: var(--danger); color: #fff; font-size: 0.6rem; width: 18px; height: 18px; border-radius: 50%; display: flex; align-items: center; justify-content: center; }
+
+        #rep-preview { display: none; padding: 10px 15px; background: rgba(0, 0, 0, 0.4); border-top: 1px solid var(--glass-border); align-items: center; justify-content: space-between; flex-shrink: 0; }
+        .rep-info { display: flex; align-items: center; gap: 8px; }
+        .rep-label { font-size: 0.75rem; color: var(--text-muted); }
+        .rep-name { color: var(--primary); font-weight: 600; font-size: 0.85rem; }
+        .rep-close { width: 28px; height: 28px; border-radius: 8px; background: var(--glass-bg); border: 1px solid var(--glass-border); color: var(--danger); display: flex; align-items: center; justify-content: center; cursor: pointer; transition: all 0.3s ease; }
+        .rep-close:hover { background: var(--danger); color: #fff; }
+
+        .footer-bar { padding: 12px 15px 20px; display: flex; gap: 10px; align-items: center; background: rgba(0, 0, 0, 0.3); border-top: 1px solid var(--glass-border); backdrop-filter: blur(20px); flex-shrink: 0; }
+        .input-actions { display: flex; gap: 8px; }
+        .input-action-btn { width: 42px; height: 42px; border-radius: 12px; background: var(--glass-bg); border: 1px solid var(--glass-border); color: var(--primary); display: flex; align-items: center; justify-content: center; cursor: pointer; transition: all 0.3s ease; font-size: 1rem; }
+        .input-action-btn:hover { background: var(--primary); color: #000; }
+        #msg-input { flex: 1; }
+        .send-btn { width: 45px; height: 45px; border-radius: 14px; background: linear-gradient(135deg, var(--primary), var(--secondary)); border: none; color: #000; font-size: 1.1rem; display: flex; align-items: center; justify-content: center; cursor: pointer; transition: all 0.3s ease; }
+        .send-btn:hover { transform: scale(1.05) rotate(-5deg); box-shadow: 0 10px 30px var(--primary-glow); }
+
+        .emoji-picker { position: absolute; bottom: 70px; left: 15px; background: rgba(0, 0, 0, 0.95); border: 1px solid var(--glass-border); border-radius: 16px; padding: 15px; display: none; grid-template-columns: repeat(8, 1fr); gap: 8px; max-width: 320px; z-index: 1000; box-shadow: 0 10px 40px rgba(0,0,0,0.5); }
+        .emoji-picker.show { display: grid; }
+        .emoji-item { font-size: 1.4rem; cursor: pointer; text-align: center; padding: 5px; border-radius: 8px; transition: all 0.2s ease; }
+        .emoji-item:hover { background: var(--glass-bg); transform: scale(1.2); }
+
+        .context-overlay { position: fixed; inset: 0; background: rgba(0, 0, 0, 0.6); backdrop-filter: blur(5px); z-index: 10000; display: none; align-items: center; justify-content: center; animation: fadeIn 0.2s ease; }
+        @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
+        .context-menu { width: 260px; overflow: hidden; animation: pop 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275); }
+        @keyframes pop { from { transform: scale(0.8) translateY(20px); opacity: 0; } to { transform: scale(1) translateY(0); opacity: 1; } }
+        .menu-header { padding: 15px; text-align: center; border-bottom: 1px solid var(--glass-border); }
+        .menu-avatar { width: 55px; height: 55px; border-radius: 50%; object-fit: cover; border: 3px solid var(--primary); box-shadow: 0 0 20px var(--primary-glow); margin-bottom: 8px; }
+        .menu-username { font-size: 1rem; font-weight: 700; color: var(--text-primary); }
+        .menu-item { padding: 14px 18px; cursor: pointer; border-bottom: 1px solid var(--glass-border); display: flex; align-items: center; gap: 12px; transition: all 0.2s ease; color: var(--text-primary); font-size: 0.9rem; }
         .menu-item:last-child { border: none; }
-        .menu-item:active { background: var(--gold); color: black; }
+        .menu-item:hover { background: var(--glass-highlight); }
+        .menu-item i { width: 22px; text-align: center; font-size: 1rem; }
+        .menu-item.danger { color: var(--danger); }
+        .menu-item.danger:hover { background: rgba(241, 91, 181, 0.2); }
+        .menu-item.pin { color: var(--warning); }
+        .menu-item.forward { color: var(--info); }
 
-        /* شريط الإدخال */
-        .footer-bar { padding: 10px 15px 30px; background: #000; display: flex; gap: 10px; border-top: 1px solid #222; }
-        #msg-input { flex: 1; background: var(--input-bg); border: 1px solid var(--gold); padding: 12px; border-radius: 15px; color: white; outline: none; font-size: 16px; }
-        
-        .modal { position: fixed; inset: 0; background: rgba(0,0,0,0.9); z-index: 10001; display: none; align-items: center; justify-content: center; padding: 20px; }
+        .modal { position: fixed; inset: 0; background: rgba(0, 0, 0, 0.7); backdrop-filter: blur(10px); z-index: 10001; display: none; align-items: center; justify-content: center; padding: 15px; animation: fadeIn 0.3s ease; }
+        .modal-content { width: 100%; max-width: 420px; max-height: 85vh; overflow-y: auto; padding: 25px; position: relative; }
+        .modal-close { position: absolute; top: 12px; left: 12px; width: 32px; height: 32px; border-radius: 10px; background: var(--glass-bg); border: 1px solid var(--glass-border); color: var(--text-muted); display: flex; align-items: center; justify-content: center; cursor: pointer; transition: all 0.3s ease; }
+        .modal-close:hover { background: var(--danger); color: #fff; }
+        .modal-title { font-size: 1.3rem; font-weight: 700; text-align: center; margin-bottom: 20px; background: linear-gradient(135deg, var(--primary), var(--accent)); -webkit-background-clip: text; -webkit-text-fill-color: transparent; }
+
+        .profile-view { text-align: center; }
+        .profile-avatar-large { width: 100px; height: 100px; border-radius: 50%; object-fit: cover; border: 4px solid var(--primary); box-shadow: 0 0 40px var(--primary-glow); margin: 0 auto 15px; }
+        .profile-name { font-size: 1.3rem; font-weight: 700; color: var(--text-primary); margin-bottom: 5px; }
+        .profile-badge { display: inline-flex; align-items: center; gap: 5px; background: linear-gradient(135deg, var(--primary), var(--accent)); color: #000; padding: 5px 12px; border-radius: 15px; font-size: 0.75rem; font-weight: 700; margin-bottom: 15px; }
+        .profile-bio { background: rgba(0, 0, 0, 0.3); padding: 15px; border-radius: 14px; color: var(--text-secondary); font-style: italic; line-height: 1.7; margin-bottom: 15px; font-size: 0.9rem; }
+        .profile-stats { display: flex; justify-content: center; gap: 25px; margin-bottom: 20px; }
+        .stat-item { text-align: center; }
+        .stat-value { font-size: 1.3rem; font-weight: 700; color: var(--primary); }
+        .stat-label { font-size: 0.7rem; color: var(--text-muted); }
+
+        .banned-item { display: flex; align-items: center; justify-content: space-between; padding: 12px; background: rgba(0, 0, 0, 0.3); border-radius: 12px; margin-bottom: 8px; }
+        .banned-user-info { display: flex; align-items: center; gap: 10px; }
+        .banned-avatar { width: 40px; height: 40px; border-radius: 50%; object-fit: cover; filter: grayscale(100%); opacity: 0.6; }
+        .banned-name { text-decoration: line-through; color: var(--text-muted); font-size: 0.85rem; }
+        .unban-btn { padding: 6px 12px; border-radius: 8px; background: transparent; border: 1px solid var(--success); color: var(--success); font-size: 0.75rem; cursor: pointer; transition: all 0.3s ease; }
+        .unban-btn:hover { background: var(--success); color: #000; }
+
+        .stats-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 12px; margin-bottom: 20px; }
+        .stat-card { background: rgba(0, 0, 0, 0.3); padding: 15px; border-radius: 14px; text-align: center; }
+        .stat-card-icon { font-size: 1.5rem; color: var(--primary); margin-bottom: 8px; }
+        .stat-card-value { font-size: 1.5rem; font-weight: 700; color: var(--text-primary); }
+        .stat-card-label { font-size: 0.7rem; color: var(--text-muted); }
+
+        .empty-state { text-align: center; padding: 30px; color: var(--text-muted); }
+        .empty-state i { font-size: 2.5rem; margin-bottom: 12px; opacity: 0.5; }
+        .empty-state p { font-size: 0.85rem; }
+
+        .notification { position: fixed; top: 20px; left: 50%; transform: translateX(-50%) translateY(-100px); background: var(--glass-bg); backdrop-filter: blur(20px); border: 1px solid var(--glass-border); border-radius: 12px; padding: 12px 20px; display: flex; align-items: center; gap: 10px; z-index: 10002; transition: all 0.3s ease; opacity: 0; }
+        .notification.show { transform: translateX(-50%) translateY(0); opacity: 1; }
+        .notification-icon { color: var(--primary); font-size: 1.2rem; }
+        .notification-text { color: var(--text-primary); font-size: 0.85rem; }
+
+        .image-modal { position: fixed; inset: 0; background: rgba(0, 0, 0, 0.95); z-index: 10003; display: none; align-items: center; justify-content: center; padding: 20px; }
+        .image-modal img { max-width: 90%; max-height: 90%; border-radius: 16px; box-shadow: 0 20px 60px rgba(0,0,0,0.5); }
+        .image-modal-close { position: absolute; top: 20px; right: 20px; width: 45px; height: 45px; border-radius: 50%; background: var(--glass-bg); border: 1px solid var(--glass-border); color: #fff; display: flex; align-items: center; justify-content: center; cursor: pointer; font-size: 1.2rem; }
+
+        .typing-indicator { display: none; align-items: center; gap: 6px; padding: 8px 15px; color: var(--text-muted); font-size: 0.75rem; }
+        .typing-dots { display: flex; gap: 3px; }
+        .typing-dot { width: 7px; height: 7px; background: var(--primary); border-radius: 50%; animation: typingBounce 1.4s ease-in-out infinite; }
+        .typing-dot:nth-child(2) { animation-delay: 0.2s; }
+        .typing-dot:nth-child(3) { animation-delay: 0.4s; }
+        @keyframes typingBounce { 0%, 60%, 100% { transform: translateY(0); } 30% { transform: translateY(-8px); } }
+
+        .msg-anim { animation: msgSlide 0.3s ease; }
+        @keyframes msgSlide { from { opacity: 0; transform: translateY(20px) scale(0.95); } to { opacity: 1; transform: translateY(0) scale(1); } }
+
+        .error-box { background: rgba(241, 91, 181, 0.2); border: 1px solid var(--danger); border-radius: 12px; padding: 15px; margin: 15px 0; color: var(--danger); font-size: 0.85rem; display: none; }
+        .error-box.show { display: block; animation: shake 0.5s ease; }
+        @keyframes shake { 0%, 100% { transform: translateX(0); } 25% { transform: translateX(-10px); } 75% { transform: translateX(10px); } }
+
+        @media (max-width: 768px) {
+            .auth-box { padding: 25px 20px; max-width: 100%; }
+            .auth-logo { width: 70px; height: 70px; font-size: 1.8rem; }
+            .auth-title { font-size: 1.5rem; }
+            .side-bar { width: 55px; padding: 12px 0; gap: 10px; }
+            .side-btn { width: 40px; height: 40px; font-size: 1rem; }
+            .msg-container { max-width: 92%; }
+            .msg-avatar { width: 30px; height: 30px; }
+            .bubble { padding: 10px 14px; font-size: 0.85rem; }
+            .bubble-image { max-width: 200px; max-height: 150px; }
+            .members-sidebar.open { width: 180px; }
+            .header-btn { width: 35px; height: 35px; font-size: 0.85rem; }
+            .emoji-picker { grid-template-columns: repeat(6, 1fr); max-width: 280px; }
+        }
+
+        @media (max-width: 480px) {
+            .app-header { padding: 8px 12px; }
+            .header-avatar { width: 38px; height: 38px; }
+            .header-info h3 { font-size: 0.85rem; }
+            .footer-bar { padding: 10px 12px 15px; }
+            .input-action-btn { width: 38px; height: 38px; }
+            .send-btn { width: 42px; height: 42px; }
+            #chat-flow { padding: 12px; }
+        }
+
+        .loading-overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.8); z-index: 99999; display: none; align-items: center; justify-content: center; flex-direction: column; gap: 20px; }
+        .loading-spinner { width: 50px; height: 50px; border: 3px solid var(--glass-border); border-top-color: var(--primary); border-radius: 50%; animation: spin 1s linear infinite; }
+        @keyframes spin { to { transform: rotate(360deg); } }
+        .loading-text { color: var(--text-secondary); font-size: 0.9rem; }
     </style>
 </head>
-<body>
+<body data-theme="ocean">
+    <div class="bg-container"></div>
+    <div class="orb orb-1"></div>
+    <div class="orb orb-2"></div>
+    <div class="orb orb-3"></div>
+
+    <div class="loading-overlay" id="loading-overlay">
+        <div class="loading-spinner"></div>
+        <div class="loading-text">جاري التحميل...</div>
+    </div>
+
+    <div class="notification" id="notification">
+        <i class="notification-icon fas fa-bell"></i>
+        <span class="notification-text" id="notification-text"></span>
+    </div>
+
+    <div class="image-modal" id="image-modal" onclick="closeImageModal()">
+        <button class="image-modal-close" onclick="closeImageModal()"><i class="fas fa-times"></i></button>
+        <img id="modal-image" src="" alt="">
+    </div>
 
     <div id="auth-screen">
-        <div class="auth-box">
-            <h2 style="color:var(--gold)">REZA LUXURY</h2>
-            <input type="text" id="user-id" placeholder="ID المستخدم">
-            <input type="text" id="user-display" placeholder="الاسم المستعار">
-            <input type="password" id="user-pass" placeholder="كلمة المرور">
-            <button class="btn-gold" onclick="attemptLogin()">دخول</button>
+        <div class="auth-box glass-card">
+            <div class="auth-logo"><i class="fas fa-crown"></i></div>
+            <h1 class="auth-title">REZA CHAT</h1>
+            <p class="auth-subtitle">تجربة دردشة فاخرة بتصميم زجاجي مائي</p>
+            
+            <div class="error-box" id="error-box">
+                <i class="fas fa-exclamation-triangle"></i>
+                <span id="error-text"></span>
+            </div>
+            
+            <div class="input-group">
+                <i class="input-icon fas fa-id-card"></i>
+                <input type="text" id="user-id" class="glass-input" placeholder="معرف المستخدم (ID)">
+            </div>
+            
+            <div class="input-group">
+                <i class="input-icon fas fa-user"></i>
+                <input type="text" id="user-display" class="glass-input" placeholder="الاسم المستعار">
+            </div>
+            
+            <div class="input-group">
+                <i class="input-icon fas fa-lock"></i>
+                <input type="password" id="user-pass" class="glass-input" placeholder="كلمة المرور (اختياري)">
+            </div>
+
+            <div class="avatar-section">
+                <span class="avatar-label">📸 صورة الملف الشخصي</span>
+                <div class="avatar-preview-container">
+                    <img id="avatar-preview" class="avatar-preview" style="display: none;" alt="Avatar">
+                    <div id="avatar-placeholder" class="avatar-placeholder"><i class="fas fa-camera"></i></div>
+                </div>
+                <div class="avatar-link-row">
+                    <div class="input-group" style="flex: 1; margin-bottom: 0;">
+                        <i class="input-icon fas fa-link"></i>
+                        <input type="text" id="user-avatar" class="glass-input" placeholder="رابط الصورة من Catbox" style="font-size: 0.8rem;">
+                    </div>
+                    <a href="https://catbox.moe/#" target="_blank" class="catbox-link">
+                        <i class="fas fa-external-link-alt"></i> استخرج الرابط
+                    </a>
+                </div>
+                <p class="avatar-hint"><i class="fas fa-info-circle"></i> ارفع صورتك على catbox.moe ثم انسخ الرابط</p>
+            </div>
+
+            <div class="theme-selector">
+                <span class="theme-label">🎨 اختر الثيم</span>
+                <div class="theme-options">
+                    <div class="theme-option active" data-theme="ocean" title="Ocean Blue"></div>
+                    <div class="theme-option" data-theme="purple" title="Royal Purple"></div>
+                    <div class="theme-option" data-theme="sunset" title="Sunset Glow"></div>
+                    <div class="theme-option" data-theme="emerald" title="Emerald City"></div>
+                    <div class="theme-option" data-theme="rose" title="Rose Garden"></div>
+                    <div class="theme-option" data-theme="gold" title="Golden Hour"></div>
+                </div>
+            </div>
+            
+            <button class="glass-btn" id="login-btn" onclick="attemptLogin()" style="width: 100%; margin-top: 10px;">
+                <i class="fas fa-sign-in-alt"></i> دخول المملكة
+            </button>
         </div>
     </div>
 
-    <div class="app-container">
-        <div class="voice-header">
-            <button class="btn-gold" id="btn-call" style="width:auto; padding:5px 15px">دخول الاتصال</button>
-            <button class="btn-gold" id="btn-exit-call" style="display:none; background:var(--danger); color:white; width:auto; padding:5px 15px">خروج</button>
-            <div id="voice-users" style="display:flex; gap:5px"></div>
-        </div>
-
-        <div class="main-content">
-            <div id="chat-flow"></div>
-            <div class="side-bar">
-                <i class="fas fa-user-circle side-btn" onclick="openMyProfile()"></i> 
-                <i class="fas fa-user-slash side-btn" onclick="showBannedList()"></i>
-                <i class="fas fa-sign-out-alt side-btn" onclick="location.reload()"></i>
+    <div class="app-container" id="app-container">
+        <div class="app-header">
+            <div class="header-left">
+                <img id="header-avatar" class="header-avatar" src="" alt="My Avatar">
+                <div class="header-info">
+                    <h3 id="header-name">اسم المستخدم</h3>
+                    <span><span class="online-dot"></span> متصل الآن</span>
+                </div>
+            </div>
+            <div class="header-actions">
+                <button class="header-btn" onclick="toggleSearch()" title="بحث">
+                    <i class="fas fa-search"></i>
+                </button>
+                <button class="header-btn" onclick="toggleMembers()" title="الأعضاء">
+                    <i class="fas fa-users"></i>
+                </button>
+                <button class="header-btn" onclick="toggleTheme()" title="تغيير الثيم">
+                    <i class="fas fa-palette"></i>
+                </button>
+                <button class="header-btn" onclick="openMyProfile()" title="ملفي الشخصي">
+                    <i class="fas fa-user-cog"></i>
+                </button>
             </div>
         </div>
 
-        <div id="rep-preview" style="display:none; background:rgba(212,175,55,0.1); padding:8px 15px; font-size:0.8rem; border-top:1px solid var(--gold); color:white">
-            <span>الرد على: <b id="rep-name" style="color:var(--gold)"></b></span>
-            <i class="fas fa-times" style="float:left; cursor:pointer" onclick="cancelReply()"></i>
+        <div class="search-bar" id="search-bar">
+            <div class="search-input-wrapper">
+                <i class="search-icon fas fa-search"></i>
+                <input type="text" id="search-input" class="glass-input" placeholder="ابحث في الرسائل...">
+                <i class="search-close fas fa-times" onclick="toggleSearch()"></i>
+            </div>
         </div>
 
-        <div class="footer-bar">
-            <input type="text" id="msg-input" placeholder="اكتب شيئاً...">
-            <button class="send-btn" onclick="sendMessage()" style="background:var(--gold); border:none; border-radius:12px; padding:10px 15px;"><i class="fas fa-paper-plane"></i></button>
+        <div class="main-content">
+            <div style="flex: 1; display: flex; flex-direction: column; min-width: 0;">
+                <div id="chat-flow"></div>
+                <div class="typing-indicator" id="typing-indicator">
+                    <span>يكتب</span>
+                    <div class="typing-dots"><div class="typing-dot"></div><div class="typing-dot"></div><div class="typing-dot"></div></div>
+                </div>
+            </div>
+            <div class="members-sidebar" id="members-sidebar">
+                <div class="members-header"><i class="fas fa-users"></i> الأعضاء المتصلين</div>
+                <div class="members-list" id="members-list"></div>
+            </div>
+            <div class="side-bar">
+                <button class="side-btn" onclick="openMyProfile()" data-label="ملفي"><i class="fas fa-user-circle"></i></button>
+                <button class="side-btn" onclick="showStats()" data-label="إحصائيات"><i class="fas fa-chart-bar"></i></button>
+                <button class="side-btn" onclick="showBannedList()" data-label="المحظورين"><i class="fas fa-user-slash"></i></button>
+                <button class="side-btn" onclick="exportChat()" data-label="تصدير"><i class="fas fa-download"></i></button>
+                <button class="side-btn" onclick="location.reload()" data-label="خروج"><i class="fas fa-sign-out-alt"></i></button>
+            </div>
+        </div>
+
+        <div id="rep-preview">
+            <div class="rep-info"><span class="rep-label">الرد على:</span><span class="rep-name" id="rep-name"></span></div>
+            <button class="rep-close" onclick="cancelReply()"><i class="fas fa-times"></i></button>
+        </div>
+
+        <div class="footer-bar" style="position: relative;">
+            <div class="input-actions">
+                <button class="input-action-btn" onclick="toggleEmojiPicker()" title="إيموجي"><i class="fas fa-smile"></i></button>
+                <button class="input-action-btn" onclick="sendImage()" title="إرسال صورة"><i class="fas fa-image"></i></button>
+            </div>
+            <input type="text" id="msg-input" class="glass-input" placeholder="اكتب رسالتك هنا...">
+            <button class="send-btn" onclick="sendMessage()"><i class="fas fa-paper-plane"></i></button>
+            <div class="emoji-picker" id="emoji-picker"></div>
         </div>
     </div>
 
     <div id="msg-menu-overlay" class="context-overlay" onclick="closeMenu()">
-        <div class="context-menu" onclick="event.stopPropagation()">
+        <div class="context-menu glass-card" onclick="event.stopPropagation()">
+            <div class="menu-header">
+                <img id="menu-avatar" class="menu-avatar" src="" alt="">
+                <div class="menu-username" id="menu-username"></div>
+            </div>
             <div class="menu-item" onclick="viewUserProfile()"><i class="fas fa-address-card"></i> عرض الملف الشخصي</div>
             <div class="menu-item" onclick="prepareReply()"><i class="fas fa-reply"></i> رد على الرسالة</div>
+            <div class="menu-item forward" onclick="forwardMessage()"><i class="fas fa-share"></i> إعادة توجيه</div>
+            <div class="menu-item pin" onclick="pinMessage()" id="pin-menu-item"><i class="fas fa-thumbtack"></i> تثبيت الرسالة</div>
+            <div class="menu-item" onclick="copyMessage()"><i class="fas fa-copy"></i> نسخ النص</div>
             <div id="my-ops">
                 <div class="menu-item" onclick="startEdit()"><i class="fas fa-edit"></i> تعديل رسالتي</div>
-                <div class="menu-item" style="color:var(--danger)" onclick="deleteMsg()"><i class="fas fa-trash"></i> حذف</div>
+                <div class="menu-item danger" onclick="deleteForAll()"><i class="fas fa-trash-alt"></i> حذف للجميع</div>
             </div>
             <div id="admin-ops">
-                <div class="menu-item" style="color:var(--danger); font-weight:bold" onclick="banUser()"><i class="fas fa-ban"></i> حظر المستخدم نهائياً</div>
+                <div class="menu-item danger" onclick="banUser()"><i class="fas fa-ban"></i> حظر المستخدم</div>
             </div>
         </div>
     </div>
 
-    <div id="modal-profile" class="modal" onclick="this.style.display='none'">
-        <div class="auth-box" onclick="event.stopPropagation()">
-            <i class="fas fa-crown" style="font-size:3rem; color:var(--gold); margin-bottom:15px"></i>
+    <div id="modal-profile" class="modal" onclick="closeProfileModal(event)">
+        <div class="modal-content glass-card" onclick="event.stopPropagation()">
+            <button class="modal-close" onclick="document.getElementById('modal-profile').style.display='none'"><i class="fas fa-times"></i></button>
             <div id="profile-view-mode" style="display:none">
-                <h2 id="view-name" style="color:var(--gold); margin:0"></h2>
-                <p id="view-bio" style="color:#ccc; font-style:italic; margin-top:10px"></p>
+                <div class="profile-view">
+                    <img id="view-avatar" class="profile-avatar-large" src="" alt="">
+                    <h2 id="view-name" class="profile-name"></h2>
+                    <span id="view-badge" class="profile-badge" style="display:none"><i class="fas fa-crown"></i> المالك</span>
+                    <div class="profile-stats">
+                        <div class="stat-item"><div class="stat-value" id="stat-messages">0</div><div class="stat-label">رسالة</div></div>
+                        <div class="stat-item"><div class="stat-value" id="stat-joined">الآن</div><div class="stat-label">انضم</div></div>
+                    </div>
+                    <div class="profile-bio" id="view-bio"></div>
+                </div>
             </div>
             <div id="profile-edit-mode" style="display:none">
-                <h3 style="color:white">تعديل ملفي</h3>
-                <input type="text" id="edit-name" placeholder="اسمك الجديد">
-                <textarea id="edit-bio" rows="3" placeholder="اكتب نبذة عنك (البايو)..."></textarea>
-                <button class="btn-gold" onclick="saveMyProfile()">حفظ التعديلات</button>
+                <h2 class="modal-title">تعديل ملفي الشخصي</h2>
+                <div style="text-align: center; margin-bottom: 15px;">
+                    <img id="edit-avatar-preview" class="profile-avatar-large" src="" alt="" style="width: 90px; height: 90px;">
+                </div>
+                <div class="input-group"><input type="text" id="edit-name" class="glass-input" placeholder="اسمك الجديد"></div>
+                <div class="input-group"><input type="text" id="edit-avatar" class="glass-input" placeholder="رابط الصورة الجديد"></div>
+                <div class="input-group"><textarea id="edit-bio" class="glass-input" rows="3" placeholder="اكتب نبذة عنك..."></textarea></div>
+                <button class="glass-btn" onclick="saveMyProfile()" style="width: 100%;"><i class="fas fa-save"></i> حفظ التعديلات</button>
             </div>
         </div>
     </div>
 
-    <div id="modal-banned" class="modal" onclick="this.style.display='none'">
-        <div class="auth-box" onclick="event.stopPropagation()" style="max-height: 70vh; overflow-y: auto;">
-            <h3 style="color:var(--gold)">قائمة المحظورين 🚫</h3>
+    <div id="modal-banned" class="modal" onclick="closeBannedModal(event)">
+        <div class="modal-content glass-card" onclick="event.stopPropagation()">
+            <button class="modal-close" onclick="document.getElementById('modal-banned').style.display='none'"><i class="fas fa-times"></i></button>
+            <h2 class="modal-title"><i class="fas fa-ban"></i> قائمة المحظورين</h2>
             <div id="banned-list-content"></div>
-            <button class="btn-gold" onclick="document.getElementById('modal-banned').style.display='none'">إغلاق</button>
+        </div>
+    </div>
+
+    <div id="modal-stats" class="modal" onclick="closeStatsModal(event)">
+        <div class="modal-content glass-card" onclick="event.stopPropagation()">
+            <button class="modal-close" onclick="document.getElementById('modal-stats').style.display='none'"><i class="fas fa-times"></i></button>
+            <h2 class="modal-title"><i class="fas fa-chart-bar"></i> إحصائيات الشات</h2>
+            <div class="stats-grid">
+                <div class="stat-card"><div class="stat-card-icon"><i class="fas fa-comments"></i></div><div class="stat-card-value" id="stats-total-messages">0</div><div class="stat-card-label">إجمالي الرسائل</div></div>
+                <div class="stat-card"><div class="stat-card-icon"><i class="fas fa-users"></i></div><div class="stat-card-value" id="stats-total-users">0</div><div class="stat-card-label">عدد الأعضاء</div></div>
+                <div class="stat-card"><div class="stat-card-icon"><i class="fas fa-image"></i></div><div class="stat-card-value" id="stats-total-images">0</div><div class="stat-card-label">الصور المرسلة</div></div>
+                <div class="stat-card"><div class="stat-card-icon"><i class="fas fa-clock"></i></div><div class="stat-card-value" id="stats-online-time">0</div><div class="stat-card-label">دقائق متصل</div></div>
+            </div>
+        </div>
+    </div>
+
+    <div id="modal-forward" class="modal" onclick="closeForwardModal(event)">
+        <div class="modal-content glass-card" onclick="event.stopPropagation()">
+            <button class="modal-close" onclick="document.getElementById('modal-forward').style.display='none'"><i class="fas fa-times"></i></button>
+            <h2 class="modal-title"><i class="fas fa-share"></i> إعادة توجيه</h2>
+            <div class="input-group"><input type="text" id="forward-input" class="glass-input" placeholder="أدخل اسم المستخدم..."></div>
+            <button class="glass-btn" onclick="confirmForward()" style="width: 100%;"><i class="fas fa-paper-plane"></i> إرسال</button>
         </div>
     </div>
 
     <script type="module">
         import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js";
-        import { getDatabase, ref, set, get, push, onValue, query, limitToLast, remove, update, serverTimestamp } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-database.js";
+        import { getDatabase, ref, set, get, push, onValue, query, limitToLast, remove, update, serverTimestamp, onDisconnect, onChildAdded } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-database.js";
 
+        // ⚠️ مهم: عدل هذه الإعدادات بمعلومات مشروعك في Firebase
         const firebaseConfig = {
-            apiKey: "AIzaSyBvGWF0u83mrdtBTLWgGV-ExuO6-4j-1Xk",
-            authDomain: "reza-3d325.firebaseapp.com",
-            databaseURL: "https://reza-3d325-default-rtdb.europe-west1.firebasedatabase.app",
-            projectId: "reza-3d325"
+            apiKey: "AIzaSyXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX",
+            authDomain: "reza-chat-demo.firebaseapp.com",
+            databaseURL: "https://reza-chat-demo-default-rtdb.firebaseio.com",
+            projectId: "reza-chat-demo",
+            storageBucket: "reza-chat-demo.appspot.com",
+            messagingSenderId: "123456789",
+            appId: "1:123456789:web:abcdef123456"
         };
 
-        const app = initializeApp(firebaseConfig);
-        const db = getDatabase(app);
-        
-        // أضفنا replyData هنا
-        let me = null, activeMsg = null, isEdit = false, replyData = null;
+        let app, db;
+        let me = null, activeMsg = null, isEdit = false, replyData = null, forwardData = null;
+        let currentTheme = 'ocean';
+        let onlineUsers = new Set();
+        let pinnedMessageId = null;
+        let joinTime = Date.now();
+        let isFirebaseReady = false;
 
-        window.attemptLogin = async () => {
-            const uid = document.getElementById('user-id').value.trim().toLowerCase();
-            const snap = await get(ref(db, 'users/' + uid));
-            if(snap.exists() && snap.val().isBanned) return alert("أنت محظور من دخول المملكة!");
-            
-            me = snap.exists() ? snap.val() : { user: uid, name: document.getElementById('user-display').value || uid, bio: "لا يوجد بايو", isOwner: uid === 'reza' };
-            if(!snap.exists()) await set(ref(db, 'users/' + uid), me);
-            
-            document.getElementById('auth-screen').style.display = 'none';
-            startChat();
-            
-            onValue(ref(db, `users/${me.user}/isBanned`), s => { if(s.val() === true) { alert("تم حظرك الآن!"); location.reload(); }});
-        };
+        const emojis = ['😀','😃','😄','😁','😅','😂','🤣','😊','😇','🙂','🙃','😉','😌','😍','🥰','😘','😗','😙','😚','😋','😛','😝','😜','🤪','🤨','🧐','🤓','😎','🥸','🤩','🥳','😏','😒','😞','😔','😟','😕','🙁','☹️','😣','😖','😫','😩','🥺','😢','😭','😤','😠','😡','🤬','🤯','😳','🥵','🥶','😱','😨','😰','😥','😓','🤗','🤔','🤭','🤫','🤥','😶','😐','😑','😬','🙄','😯','😦','😧','😮','😲','🥱','😴','🤤','😪','😵','🤐','🥴','🤢','🤮','🤧','😷','🤒','🤕','🤑','🤠','😈','👿','👹','👺','🤡','💩','👻','💀','☠️','👽','👾','🤖','🎃','😺','😸','😹','😻','😼','😽','🙀','😿','😾','❤️','🧡','💛','💚','💙','💜','🖤','🤍','🤎','💔','❣️','💕','💞','💓','💗','💖','💘','💝','👍','👎','👏','🙌','👐','🤲','🤝','✊','👊','🤛','🤜','🤞','✌️','🤟','🤘','👌','🤏','👈','👉','👆','👇','☝️','✋','🤚','🖐️','🖖','👋','🤙','💪','🦾','🖕','✍️','🙏','🦶','🦵','👂','🦻','👃','🧠','🦷','🦴','👀','👁️','👅','👄','💋','🩸'];
 
-        function startChat() {
-            onValue(query(ref(db, 'messages'), limitToLast(50)), async snap => {
-                const flow = document.getElementById('chat-flow');
-                flow.innerHTML = '';
-                
-                const usersSnap = await get(ref(db, 'users'));
-                const allUsers = usersSnap.val() || {};
-
-                snap.forEach(child => {
-                    const m = child.val();
-                    const userStatus = allUsers[m.uid] || {};
-                    const isBanned = userStatus.isBanned;
-                    
-                    const div = document.createElement('div');
-                    div.className = `msg-container ${m.uid === me.user ? 'mine' : 'others'}`;
-                    
-                    // تم تعديل هذا الجزء لعرض الرد
-                    div.innerHTML = `
-                        <div style="margin-bottom:4px">
-                            ${m.uid === 'reza' ? '<span class="owner-tag">المالك 👑</span>' : ''}
-                            <span style="font-size:0.7rem; color:#888">${m.name}</span>
-                        </div>
-                        <div class="bubble ${isBanned ? 'banned-msg' : ''}" onclick="openMenu('${child.key}', ${JSON.stringify(m).replace(/"/g, '&quot;')})">
-                            ${m.reply ? `<div style="font-size:0.7rem; color:var(--gold); border-right:2px solid; padding-right:5px; margin-bottom:5px; opacity:0.8">رد على ${m.reply.name}: ${m.reply.txt}</div>` : ''}
-                            ${isBanned ? '<i class="fas fa-user-slash ban-icon"></i>' : ''}
-                            ${m.txt}
-                        </div>
-                    `;
-                    flow.appendChild(div);
-                });
-                flow.scrollTop = flow.scrollHeight;
-            });
+        // تهيئة Firebase مع معالجة الأخطاء
+        function initFirebase() {
+            try {
+                app = initializeApp(firebaseConfig);
+                db = getDatabase(app);
+                isFirebaseReady = true;
+                console.log('✅ Firebase initialized successfully');
+                return true;
+            } catch (error) {
+                console.error('❌ Firebase initialization error:', error);
+                showError('فشل في الاتصال بقاعدة البيانات. تأكد من إعدادات Firebase.');
+                return false;
+            }
         }
 
-        window.sendMessage = () => {
-            const txt = document.getElementById('msg-input').value.trim();
-            if(!txt) return;
-            
-            if(isEdit) {
-                update(ref(db, `messages/${activeMsg.id}`), { txt });
-                isEdit = false;
+        // عرض رسالة خطأ
+        function showError(message) {
+            const errorBox = document.getElementById('error-box');
+            const errorText = document.getElementById('error-text');
+            errorText.textContent = message;
+            errorBox.classList.add('show');
+            setTimeout(() => errorBox.classList.remove('show'), 5000);
+        }
+
+        const avatarInput = document.getElementById('user-avatar');
+        const avatarPreview = document.getElementById('avatar-preview');
+        const avatarPlaceholder = document.getElementById('avatar-placeholder');
+
+        avatarInput.addEventListener('input', (e) => {
+            const url = e.target.value.trim();
+            if (url) {
+                avatarPreview.src = url;
+                avatarPreview.style.display = 'block';
+                avatarPlaceholder.style.display = 'none';
+                avatarPreview.onerror = () => {
+                    avatarPreview.style.display = 'none';
+                    avatarPlaceholder.style.display = 'flex';
+                };
             } else {
-                // تم تعديل هذا الجزء لإرسال الرد
-                const msgData = { uid: me.user, name: me.name, txt, time: serverTimestamp() };
-                if(replyData) msgData.reply = replyData;
-                push(ref(db, 'messages'), msgData);
+                avatarPreview.style.display = 'none';
+                avatarPlaceholder.style.display = 'flex';
             }
-            document.getElementById('msg-input').value = '';
-            cancelReply(); // لإلغاء وضع الرد بعد الإرسال
-        };
+        });
 
-        window.openMenu = (id, m) => {
-            activeMsg = { id, ...m };
-            document.getElementById('msg-menu-overlay').style.display = 'flex';
-            document.getElementById('my-ops').style.display = (m.uid === me.user) ? 'block' : 'none';
-            document.getElementById('admin-ops').style.display = (me.user === 'reza' && m.uid !== 'reza') ? 'block' : 'none';
-        };
-
-        window.closeMenu = () => document.getElementById('msg-menu-overlay').style.display = 'none';
-
-        // --- دوال الرد الجديدة ---
-        window.prepareReply = () => {
-            replyData = { name: activeMsg.name, txt: activeMsg.txt };
-            document.getElementById('rep-preview').style.display = 'block';
-            document.getElementById('rep-name').innerText = activeMsg.name;
-            closeMenu();
-            document.getElementById('msg-input').focus();
-        };
-
-        window.cancelReply = () => {
-            replyData = null;
-            document.getElementById('rep-preview').style.display = 'none';
-        };
-
-        window.viewUserProfile = async () => {
-            const uid = activeMsg.uid;
-            const snap = await get(ref(db, 'users/' + uid));
-            if(snap.exists()) {
-                const u = snap.val();
-                document.getElementById('modal-profile').style.display = 'flex';
-                document.getElementById('profile-view-mode').style.display = 'block';
-                document.getElementById('profile-edit-mode').style.display = 'none';
-                
-                document.getElementById('view-name').innerText = u.name;
-                document.getElementById('view-bio').innerText = u.bio || "لا يوجد بايو";
-            }
-            closeMenu();
-        };
-
-        window.openMyProfile = () => {
-            document.getElementById('modal-profile').style.display = 'flex';
-            document.getElementById('profile-view-mode').style.display = 'none';
-            document.getElementById('profile-edit-mode').style.display = 'block';
-            
-            document.getElementById('edit-name').value = me.name;
-            document.getElementById('edit-bio').value = me.bio || "";
-        };
-
-        window.saveMyProfile = async () => {
-            const newName = document.getElementById('edit-name').value.trim();
-            const newBio = document.getElementById('edit-bio').value.trim();
-            
-            if(newName) {
-                await update(ref(db, 'users/' + me.user), { name: newName, bio: newBio });
-                me.name = newName; me.bio = newBio;
-                alert("تم تحديث الملف الشخصي!");
-                document.getElementById('modal-profile').style.display = 'none';
-            }
-        };
-
-        window.banUser = async () => {
-            await update(ref(db, `users/${activeMsg.uid}`), { isBanned: true });
-            alert("تم حظر المستخدم بنجاح");
-            closeMenu();
-        };
-
-        window.showBannedList = async () => {
-            const snap = await get(ref(db, 'users'));
-            const content = document.getElementById('banned-list-content');
-            content.innerHTML = '';
-            snap.forEach(u => {
-                const user = u.val();
-                if(user.isBanned) {
-                    content.innerHTML += `
-                        <div style="display:flex; justify-content:space-between; padding:10px; border-bottom:1px solid #333">
-                            <span style="text-decoration:line-through">${user.name}</span>
-                            ${me.user === 'reza' ? `<button onclick="unban('${u.key}')" style="color:var(--gold); background:none; border:none">فك الحظر</button>` : ''}
-                        </div>
-                    `;
-                }
+        document.querySelectorAll('.theme-option').forEach(option => {
+            option.addEventListener('click', () => {
+                document.querySelectorAll('.theme-option').forEach(o => o.classList.remove('active'));
+                option.classList.add('active');
+                currentTheme = option.dataset.theme;
+                document.body.setAttribute('data-theme', currentTheme);
             });
-            document.getElementById('modal-banned').style.display = 'flex';
+        });
+
+        window.toggleTheme = () => {
+            const themes = ['ocean', 'purple', 'sunset', 'emerald', 'rose', 'gold'];
+            const currentIndex = themes.indexOf(currentTheme);
+            const nextIndex = (currentIndex + 1) % themes.length;
+            currentTheme = themes[nextIndex];
+            document.body.setAttribute('data-theme', currentTheme);
+            document.querySelectorAll('.theme-option').forEach(o => o.classList.toggle('active', o.dataset.theme === currentTheme));
+            showNotification(`تم تغيير الثيم إلى ${getThemeName(currentTheme)}`);
         };
 
-        window.unban = async (uid) => {
-            await update(ref(db, `users/${uid}`), { isBanned: false });
-            alert("تم فك الحظر");
-            showBannedList();
-        };
+        const getThemeName = (theme) => ({ ocean: 'Ocean Blue', purple: 'Royal Purple', sunset: 'Sunset Glow', emerald: 'Emerald City', rose: 'Rose Garden', gold: 'Golden Hour' }[theme]);
 
-        window.startEdit = () => { isEdit = true; document.getElementById('msg-input').value = activeMsg.txt; closeMenu(); };
-        window.deleteMsg = () => { remove(ref(db, `messages/${activeMsg.id}`)); closeMenu(); };
-    </script>
-</body>
-</html>
+        // ✅ دالة تسجيل الدخول المُصلحة مع معالجة الأخطاء
+        window.attemptLogin = async () => {
+            const uid = document.getElementById('user-id').value.trim().toLowerCase();
+            const name = document.getElementById('user-display').value.trim() || uid;
+            const avatar = document.getElementById('user-avatar').value.trim();
+            const loginBtn = document.getElementById('login-btn');
+            
+            if (!uid) { 
+                showError('الرجاء إدخال معرف المستخدم');
+                return; 
+            }
+
+            // التحقق من تهيئة Firebase
+            if (!isFirebaseReady) {
+                if (!initFirebase()) {
+                    showError('لم يتم تهيئة Firebase بشكل صحيح');
+                    return;
+                }
+            }
+
+            // تعطيل الزر وإظهار التحميل
+            loginBtn.disabled = true;
+            document.getElementById('loading-overlay').style.display = 'flex';
+            document.getElementById('error-box').classList.remove('show');
+
+            try {
+                console.log('🔍 Checking user:', uid);
+                
+                // محاولة قراءة بيانات المستخدم
+                let snap;
+                try {
+                    snap = 
