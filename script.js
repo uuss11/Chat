@@ -841,7 +841,7 @@ import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebas
                 const response = await fetch('https://openrouter.ai/api/v1/chat/completions', {
                     method: 'POST',
                     headers: {
-                        'Authorization': \`Bearer \${dbAiConfig.apiKey}\`,
+                        'Authorization': `Bearer ${dbAiConfig.apiKey}`,
                         'HTTP-Referer': 'https://uuss11.github.io/Chat/',
                         'X-Title': 'REZA CHAT',
                         'Content-Type': 'application/json'
