@@ -367,7 +367,7 @@ import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebas
                     
                     const userStatus = allUsers[m.uid] || {};
                     const isBanned = userStatus.isBanned;
-                    const userAvatar = userStatus.avatar || `https://api.dicebear.com/7.x/avataaars/svg?seed=${m.uid}`;
+                    const userAvatar = userStatus.avatar || m.avatar || `https://api.dicebear.com/7.x/avataaars/svg?seed=${m.uid}`;
                     
                     const div = document.createElement('div');
                     div.className = `msg-container ${m.uid === me.user ? 'mine' : 'others'} msg-anim`;
