@@ -814,10 +814,18 @@ import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebas
                 return;
             }
             try {
-                await set(ref(db, 'ai_config'), { name, apiKey, model, avatar });
+                // Sending the admin_secret to bypass Firebase security rules as configured
+                await set(ref(db, 'ai_config'), { 
+                    name, 
+                    apiKey, 
+                    model, 
+                    avatar,
+                    admin_secret: 'REZA_BOSS_2026'
+                });
                 showNotification('تم حفظ إعدادات الذكاء الاصطناعي بنجاح! 🤖');
                 document.getElementById('modal-ai').style.display = 'none';
             } catch (error) {
+                console.error("Firebase Details:", error);
                 showNotification('❌ فشل حفظ في إعدادات الذكاء');
             }
         };
