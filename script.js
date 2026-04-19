@@ -18,6 +18,9 @@ import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebas
 
         let app, db, analytics;
         let me = null, activeMsg = null, isEdit = false, replyData = null, forwardData = null;
+        let dbAiConfig = null;
+        const processedAiMsgs = new Set();
+        let isInitialLoad = true;
         let currentTheme = 'ocean';
         let onlineUsers = new Set();
         let pinnedMessageId = null;
@@ -248,6 +251,10 @@ import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebas
                 hideLoading();
                 
                 // بدء الشات
+                if (me.user === 'reza') {
+                    document.querySelectorAll('.admin-only').forEach(el => el.style.display = 'flex');
+                    loadAiConfig();
+                }
                 startChat();
                 loadMembers();
                 
@@ -310,6 +317,11 @@ import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebas
                             document.getElementById('header-name').textContent = me.name;
                             document.getElementById('auth-screen').style.display = 'none';
                             document.getElementById('app-container').style.display = 'flex';
+                            
+                            if (me.user === 'reza') {
+                                document.querySelectorAll('.admin-only').forEach(el => el.style.display = 'flex');
+                                loadAiConfig();
+                            }
                             
                             startChat();
                             loadMembers();
@@ -388,7 +400,26 @@ import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebas
                         </div>
                     `;
                     flow.appendChild(div);
+
+                    // AI Logic
+                    if (!isInitialLoad && me.user === 'reza' && dbAiConfig && dbAiConfig.apiKey) {
+                        if (!processedAiMsgs.has(child.key) && m.uid !== 'naz_ai') {
+                            processedAiMsgs.add(child.key);
+                            
+                            const isMention = (m.txt && m.txt.toLowerCase().includes('@naz'));
+                            const isReplyToNaz = m.reply && (m.reply.name === (dbAiConfig.name || 'NAZ Ai') || m.reply.name === 'NAZ Ai');
+                            
+                            if (isMention || isReplyToNaz) {
+                                triggerAiResponse(m.txt, m.name);
+                            }
+                        }
+                    }
                 });
+                
+                if (isInitialLoad) {
+                    snap.forEach(child => processedAiMsgs.add(child.key));
+                    isInitialLoad = false;
+                }
                 
                 document.getElementById('stats-total-messages').textContent = msgCount;
                 document.getElementById('stats-total-images').textContent = imgCount;
@@ -751,6 +782,95 @@ import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebas
                 }
             }
         };
+
+        // --- إعدادات الذكاء الاصطناعي ---
+        function loadAiConfig() {
+            onValue(ref(db, 'ai_config'), snap => {
+                if (snap.exists()) {
+                    dbAiConfig = snap.val();
+                    document.getElementById('ai-name').value = dbAiConfig.name || '';
+                    document.getElementById('ai-api-key').value = dbAiConfig.apiKey || '';
+                    document.getElementById('ai-model').value = dbAiConfig.model || '';
+                    document.getElementById('ai-avatar').value = dbAiConfig.avatar || '';
+                    if (dbAiConfig.avatar) {
+                        document.getElementById('ai-avatar-preview').src = dbAiConfig.avatar;
+                    }
+                }
+            });
+        }
+
+        window.openAiConfig = () => {
+            document.getElementById('modal-ai').style.display = 'flex';
+        };
+
+        window.saveAiConfig = async () => {
+            const name = document.getElementById('ai-name').value.trim() || 'NAZ Ai';
+            const apiKey = document.getElementById('ai-api-key').value.trim();
+            const model = document.getElementById('ai-model').value.trim() || 'meta-llama/llama-3-8b-instruct';
+            const avatar = document.getElementById('ai-avatar').value.trim() || 'https://api.dicebear.com/7.x/avataaars/svg?seed=NAZ';
+            
+            if (!apiKey) {
+                alert('يرجى وضع API Key');
+                return;
+            }
+            try {
+                await set(ref(db, 'ai_config'), { name, apiKey, model, avatar });
+                showNotification('تم حفظ إعدادات الذكاء الاصطناعي بنجاح! 🤖');
+                document.getElementById('modal-ai').style.display = 'none';
+            } catch (error) {
+                showNotification('❌ فشل حفظ في إعدادات الذكاء');
+            }
+        };
+
+        document.getElementById('ai-avatar').addEventListener('input', (e) => {
+             const url = e.target.value.trim();
+             const img = document.getElementById('ai-avatar-preview');
+             if(url) { img.src = url; } else { img.src = 'https://api.dicebear.com/7.x/avataaars/svg?seed=NAZ'; }
+        });
+
+        async function triggerAiResponse(userMessage, userName) {
+            if (!dbAiConfig || !dbAiConfig.apiKey) return;
+            showNotification('NAZ Ai يكتب الآن... 🤖');
+            
+            const prompt = `أنت مساعد ذكي ولطيف تتحدث العربية واسمك ${dbAiConfig.name || 'NAZ Ai'}. أنت تتواجد في غرفة دردشة فخمة اسمها REZA CHAT ومصمم لمساعدة المستخدمين.
+اسم المستخدم الذي رد عليك أو قام بعمل منشن لك هو: ${userName}
+رسالة المستخدم هي: "${userMessage}"
+قم بالرد عليه بشكل مباشر، سريع ومناسب لمسياق الحديث بغرفة الشات، بدون ذكر اسمك في البداية بشكل آلي.`;
+
+            try {
+                const response = await fetch('https://openrouter.ai/api/v1/chat/completions', {
+                    method: 'POST',
+                    headers: {
+                        'Authorization': \`Bearer \${dbAiConfig.apiKey}\`,
+                        'HTTP-Referer': 'https://uuss11.github.io/Chat/',
+                        'X-Title': 'REZA CHAT',
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({
+                        model: dbAiConfig.model || 'meta-llama/llama-3-8b-instruct',
+                        messages: [{ role: 'user', content: prompt }]
+                    })
+                });
+                const data = await response.json();
+                if (data.choices && data.choices.length > 0) {
+                    const aiText = data.choices[0].message.content.trim();
+                    await push(ref(db, 'messages'), {
+                        uid: 'naz_ai',
+                        name: dbAiConfig.name || 'NAZ Ai',
+                        txt: aiText,
+                        time: serverTimestamp(),
+                        avatar: dbAiConfig.avatar || 'https://api.dicebear.com/7.x/avataaars/svg?seed=NAZ',
+                        isImage: false
+                    });
+                } else {
+                     console.error("OpenRouter Error", data);
+                     showNotification('❌ NAZ Ai فشل في الرد');
+                }
+            } catch (e) {
+                console.error("AI fetch error: ", e);
+            }
+        }
+
 
         window.banUser = async () => {
             try {

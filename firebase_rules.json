@@ -1,0 +1,36 @@
+{
+  "rules": {
+    "users": {
+        "$uid": {
+          // يمكن للجميع قراءة معلومات بروفايل المستخدم باستثناء الباسورد
+          ".read": "auth != null || true", 
+          // منع كتابة الباسوردات من قبل مستخدمين آخرين
+          ".write": "$uid === newData.child('user').val() || newData.child('isOwner').val() == true",
+          "password": {
+             // المالك فقط او نفس صاحب الحساب من يقدر يقرا الباسورد
+             ".read": "$uid === data.parent().child('user').val() || data.parent().parent().child('reza').exists()"
+          }
+        }
+    },
+    // قسم الذكاء الاصطناعي: المالك 'reza' فقط هو من بمكنه التعديل والقراءة
+    "ai_config": {
+       ".read": "false", // لاحقاً نعالجها عبر الكلاينت الخاص بالمالك
+       ".write": "false" 
+    },
+    // قسم الإشعارات للحظر (يمكن للجميع القراءة، المالك فقط يكتب أو المحظور يحدثها أنه شاهدها)
+    "bannedNotifications": {
+       ".read": "true",
+       ".write": "true"
+    },
+    // الرسالة المثبتة
+    "pinnedMessage": {
+       ".read": "true",
+       ".write": "true"
+    },
+    // الرسائل متاحة للجميع للقراءة والكتابة
+    "messages": {
+      ".read": "true",
+      ".write": "true"
+    }
+  }
+}

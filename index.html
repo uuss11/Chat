@@ -157,6 +157,7 @@
                 <button class="side-btn" onclick="openMyProfile()" data-label="ملفي"><i class="fas fa-user-circle"></i></button>
                 <button class="side-btn" onclick="showStats()" data-label="إحصائيات"><i class="fas fa-chart-bar"></i></button>
                 <button class="side-btn" onclick="showBannedList()" data-label="المحظورين"><i class="fas fa-user-slash"></i></button>
+                <button class="side-btn admin-only" style="display:none" onclick="openAiConfig()" data-label="الذكاء"><i class="fas fa-robot"></i></button>
                 <button class="side-btn" onclick="logout()" data-label="خروج"><i class="fas fa-sign-out-alt"></i></button>
             </div>
         </div>
@@ -253,6 +254,39 @@
             <h2 class="modal-title"><i class="fas fa-share"></i> إعادة توجيه</h2>
             <div class="input-group"><input type="text" id="forward-input" class="glass-input" placeholder="أدخل اسم المستخدم..."></div>
             <button class="glass-btn" onclick="confirmForward()" style="width: 100%;"><i class="fas fa-paper-plane"></i> إرسال</button>
+        </div>
+    </div>
+
+    <!-- نافذة إعدادات الذكاء الاصطناعي (للمالك فقط) -->
+    <div id="modal-ai" class="modal" onclick="if(event.target === this) this.style.display='none'">
+        <div class="modal-content glass-card" onclick="event.stopPropagation()">
+            <button class="modal-close" onclick="document.getElementById('modal-ai').style.display='none'"><i class="fas fa-times"></i></button>
+            <h2 class="modal-title"><i class="fas fa-robot"></i> إعدادات NAZ Ai</h2>
+            
+            <div style="text-align: center; margin-bottom: 15px;">
+                <img id="ai-avatar-preview" class="profile-avatar-large" src="https://api.dicebear.com/7.x/avataaars/svg?seed=NAZ" alt="AI Avatar">
+            </div>
+            
+            <div class="input-group">
+                <i class="input-icon fas fa-robot"></i>
+                <input type="text" id="ai-name" class="glass-input" placeholder="اسم الذكاء (مثال: NAZ Ai)">
+            </div>
+            <div class="input-group">
+                <i class="input-icon fas fa-key"></i>
+                <input type="password" id="ai-api-key" class="glass-input" placeholder="OpenRouter API Key">
+            </div>
+            <div class="input-group">
+                <i class="input-icon fas fa-brain"></i>
+                <input type="text" id="ai-model" class="glass-input" placeholder="النموذج (مثال: meta-llama/llama-3-8b-instruct)">
+            </div>
+            <div class="input-group">
+                <i class="input-icon fas fa-image"></i>
+                <input type="text" id="ai-avatar" class="glass-input" placeholder="رابط صورة الحساب (اختياري)">
+            </div>
+            
+            <button class="glass-btn" onclick="saveAiConfig()" style="width: 100%; margin-top: 15px;">
+                <i class="fas fa-save"></i> حفظ إعدادات AI
+            </button>
         </div>
     </div>
 
