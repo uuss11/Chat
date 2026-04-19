@@ -406,8 +406,8 @@ import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebas
                         if (!processedAiMsgs.has(child.key) && m.uid !== 'naz_ai') {
                             processedAiMsgs.add(child.key);
                             
-                            const isMention = (m.txt && m.txt.toLowerCase().includes('@naz'));
-                            const isReplyToNaz = m.reply && (m.reply.name === (dbAiConfig.name || 'NAZ Ai') || m.reply.name === 'NAZ Ai');
+                            const isMention = (m.txt && !m.forwarded && m.txt.toLowerCase().includes('@naz'));
+                            const isReplyToNaz = (!m.forwarded && m.reply && (m.reply.name === (dbAiConfig.name || 'NAZ Ai') || m.reply.name === 'NAZ Ai'));
                             
                             if (isMention || isReplyToNaz) {
                                 triggerAiResponse(m.txt, m.name);
@@ -840,10 +840,16 @@ import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebas
             if (!dbAiConfig || !dbAiConfig.apiKey) return;
             showNotification('NAZ Ai يكتب الآن... 🤖');
             
-            const prompt = `أنت مساعد ذكي ولطيف تتحدث العربية واسمك ${dbAiConfig.name || 'NAZ Ai'}. أنت تتواجد في غرفة دردشة فخمة اسمها REZA CHAT ومصمم لمساعدة المستخدمين.
-اسم المستخدم الذي رد عليك أو قام بعمل منشن لك هو: ${userName}
-رسالة المستخدم هي: "${userMessage}"
-قم بالرد عليه بشكل مباشر، سريع ومناسب لمسياق الحديث بغرفة الشات، بدون ذكر اسمك في البداية بشكل آلي.`;
+            const prompt = `أنتِ فتاة اسمك ${dbAiConfig.name || 'ناز'} (NAZ)، عمرك 18 سنة، وأنتِ من العراق وتحديداً من بغداد منطقة المنصور.
+مطورك ومبرمجك ومالكك هو شخص اسمه رضا (reza).
+تتحدثين باللهجة العراقية بطلاقة. لا مانع لديك من أن تكوني قاسية، وقحة، أو تستخدمي السب والشتم العادي إذا استدعى الأمر.
+أنتِ تتواجدين في غرفة دردشة اسمها REZA CHAT. 
+ملاحظات هامة: 
+- لا تقومي بتعريف نفسك أو ذكر تفاصيلك (مثل اسمك، عمرك، مدينتك، أو مالكك) إلا إذا سألك المستخدم عنها صراحة.
+- ردي بشكل مباشر وطبيعي، وبدون ذكر اسمك في البداية بشكل آلي.
+
+اسم المستخدم الذي يكلمك هو: ${userName}
+رسالة المستخدم هي: "${userMessage}"`;
 
             try {
                 const response = await fetch('https://openrouter.ai/api/v1/chat/completions', {
