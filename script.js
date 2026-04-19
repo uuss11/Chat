@@ -406,11 +406,19 @@ import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebas
                         if (!processedAiMsgs.has(child.key) && m.uid !== 'naz_ai') {
                             processedAiMsgs.add(child.key);
                             
-                            const isMention = (m.txt && !m.forwarded && m.txt.toLowerCase().includes('@naz'));
-                            const isReplyToNaz = (!m.forwarded && m.reply && (m.reply.name === (dbAiConfig.name || 'NAZ Ai') || m.reply.name === 'NAZ Ai'));
+                            // التحقق أن الرسالة جديدة (بعد وقت دخول المالك) لتجنب الرد على رسائل قديمة 
+                            // تظهر بسبب إزاحة النافذة عند حذف رسائل أخرى
+                            const isNewMessage = m.time >= joinTime;
                             
-                            if (isMention || isReplyToNaz) {
-                                triggerAiResponse(m.txt, m.name);
+                            if (isNewMessage && !m.aiResponded) {
+                                const isMention = (m.txt && !m.forwarded && m.txt.toLowerCase().includes('@naz'));
+                                const isReplyToNaz = (!m.forwarded && m.reply && (m.reply.name === (dbAiConfig.name || 'NAZ Ai') || m.reply.name === 'NAZ Ai'));
+                                
+                                if (isMention || isReplyToNaz) {
+                                    // وضع علامة في قاعدة البيانات أنه تمت الاستجابة للرسالة لمنع التكرار
+                                    update(ref(db, `messages/${child.key}`), { aiResponded: true }).catch(() => {});
+                                    triggerAiResponse(m.txt, m.name);
+                                }
                             }
                         }
                     }
