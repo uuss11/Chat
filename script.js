@@ -387,12 +387,12 @@ import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebas
                     
                     div.innerHTML = `
                         <div class="msg-header">
-                            ${m.uid === me.user ? '' : `<img src="${userAvatar}" class="msg-avatar" alt="${m.name}" onclick="openUserAvatarModal('${userAvatar}')">`}
+                            ${m.uid === me.user ? '' : `<img src="${userAvatar}" class="msg-avatar" alt="${m.name}" onclick="openUserAvatarModal('${userAvatar}')" onerror="this.src='https://api.dicebear.com/7.x/avataaars/svg?seed=${m.uid}'">`}
                             <div class="msg-sender-info">
                                 <span class="msg-name">${m.name} ${ownerBadge} ${pinnedBadge}</span>
                                 <span class="msg-time">${formatTime(m.time)}</span>
                             </div>
-                            ${m.uid === me.user ? `<img src="${userAvatar}" class="msg-avatar" alt="${m.name}" onclick="openUserAvatarModal('${userAvatar}')">` : ''}
+                            ${m.uid === me.user ? `<img src="${userAvatar}" class="msg-avatar" alt="${m.name}" onclick="openUserAvatarModal('${userAvatar}')" onerror="this.src='https://api.dicebear.com/7.x/avataaars/svg?seed=${m.uid}'">` : ''}
                         </div>
                         <div class="bubble ${isBanned ? 'banned-msg' : ''}" onclick="openMenu('${child.key}', ${JSON.stringify(m).replace(/"/g, '&quot;')})">
                             ${m.reply ? `<div class="reply-preview"><span class="reply-name">${m.reply.name}</span><div class="reply-text">${m.reply.txt.substring(0, 50)}${m.reply.txt.length > 50 ? '...' : ''}</div></div>` : ''}
@@ -978,7 +978,7 @@ import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebas
                     item.className = 'member-item';
                     const avatarUrl = user.avatar || `https://api.dicebear.com/7.x/avataaars/svg?seed=${u.key}`;
                     item.innerHTML = `
-                        <img src="${avatarUrl}" class="member-avatar" alt="" onclick="openUserAvatarModal('${avatarUrl}')">
+                        <img src="${avatarUrl}" class="member-avatar" alt="" onclick="openUserAvatarModal('${avatarUrl}')" onerror="this.src='https://api.dicebear.com/7.x/avataaars/svg?seed=${u.key}'">
                         <div class="member-info">
                             <div class="member-name">${user.name} ${u.key === 'reza' ? '👑' : ''}</div>
                             <div class="${user.isOnline ? 'member-status' : 'member-owner'}">${user.isOnline ? 'متصل' : 'غير متصل'}</div>
