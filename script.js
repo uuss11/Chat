@@ -278,7 +278,7 @@ import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebas
         // تسجيل الخروج
         window.logout = () => {
             if (me && me.user) {
-                update(ref(db, `users/${me.user}/isOnline`), false);
+                set(ref(db, `users/${me.user}/isOnline`), false);
             }
             deleteCookie('reza_user');
             deleteCookie('reza_pass');
