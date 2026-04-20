@@ -253,8 +253,8 @@ import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebas
                 // بدء الشات
                 if (me.user === 'reza') {
                     document.querySelectorAll('.admin-only').forEach(el => el.style.display = 'flex');
-                    loadAiConfig();
                 }
+                loadAiConfig();
                 startChat();
                 loadMembers();
                 
@@ -320,8 +320,8 @@ import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebas
                             
                             if (me.user === 'reza') {
                                 document.querySelectorAll('.admin-only').forEach(el => el.style.display = 'flex');
-                                loadAiConfig();
                             }
+                            loadAiConfig();
                             
                             startChat();
                             loadMembers();
@@ -402,7 +402,7 @@ import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebas
                     flow.appendChild(div);
 
                     // AI Logic
-                    if (!isInitialLoad && me.user === 'reza' && dbAiConfig && dbAiConfig.apiKey) {
+                    if (!isInitialLoad && dbAiConfig && dbAiConfig.apiKey) {
                         if (!processedAiMsgs.has(child.key) && m.uid !== 'naz_ai') {
                             processedAiMsgs.add(child.key);
                             
@@ -411,7 +411,7 @@ import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebas
                             const isNewMessage = m.time >= joinTime;
                             
                             if (isNewMessage && !m.aiResponded) {
-                                const isMention = (m.txt && !m.forwarded && m.txt.toLowerCase().includes('@naz'));
+                                const isMention = (m.txt && !m.forwarded && (m.txt.toLowerCase().includes('@naz') || m.txt.includes('ناز')));
                                 const isReplyToNaz = (!m.forwarded && m.reply && (m.reply.name === (dbAiConfig.name || 'NAZ Ai') || m.reply.name === 'NAZ Ai'));
                                 
                                 if (isMention || isReplyToNaz) {
@@ -796,12 +796,15 @@ import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebas
             onValue(ref(db, 'ai_config'), snap => {
                 if (snap.exists()) {
                     dbAiConfig = snap.val();
-                    document.getElementById('ai-name').value = dbAiConfig.name || '';
-                    document.getElementById('ai-api-key').value = dbAiConfig.apiKey || '';
-                    document.getElementById('ai-model').value = dbAiConfig.model || '';
-                    document.getElementById('ai-avatar').value = dbAiConfig.avatar || '';
-                    if (dbAiConfig.avatar) {
-                        document.getElementById('ai-avatar-preview').src = dbAiConfig.avatar;
+                    // ملء حقول الإعدادات للمالك فقط
+                    if (me && me.user === 'reza') {
+                        document.getElementById('ai-name').value = dbAiConfig.name || '';
+                        document.getElementById('ai-api-key').value = dbAiConfig.apiKey || '';
+                        document.getElementById('ai-model').value = dbAiConfig.model || '';
+                        document.getElementById('ai-avatar').value = dbAiConfig.avatar || '';
+                        if (dbAiConfig.avatar) {
+                            document.getElementById('ai-avatar-preview').src = dbAiConfig.avatar;
+                        }
                     }
                 }
             });
