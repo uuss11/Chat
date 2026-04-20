@@ -131,6 +131,46 @@ import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebas
             setTimeout(() => notif.classList.remove('show'), 3000);
         }
 
+        // === دوال مساعدة بريميوم ===
+        const REACTION_EMOJIS = ['❤️', '👍', '😂', '😢', '😮', '🔥'];
+
+        function processMessageText(txt) {
+            if (!txt) return '';
+            const urlRegex = /(https?:\/\/[^\s<]+)/g;
+            const urls = txt.match(urlRegex);
+            let processed = txt.replace(/</g, '&lt;').replace(/>/g, '&gt;');
+            if (urls) {
+                urls.forEach(url => {
+                    try {
+                        const domain = new URL(url).hostname.replace('www.', '');
+                        const icon = domain.includes('youtube') ? 'fab fa-youtube' : domain.includes('github') ? 'fab fa-github' : domain.includes('twitter') || domain.includes('x.com') ? 'fab fa-twitter' : domain.includes('instagram') ? 'fab fa-instagram' : 'fas fa-external-link-alt';
+                        const linkCard = `<a href="${url}" target="_blank" rel="noopener" class="link-preview" onclick="event.stopPropagation()"><div class="link-preview-icon"><i class="${icon}"></i></div><div class="link-preview-info"><div class="link-preview-domain">${domain}</div><div class="link-preview-url">${url.length > 55 ? url.substring(0, 55) + '...' : url}</div></div></a>`;
+                        processed = processed.replace(url, linkCard);
+                    } catch { /* skip invalid urls */ }
+                });
+            }
+            return processed;
+        }
+
+        function renderReactions(msgKey, reactions) {
+            if (!reactions || typeof reactions !== 'object') {
+                return `<div class="reactions-container"><span class="reaction-add-btn" onclick="event.stopPropagation(); showReactionPicker('${msgKey}', this)"><i class="far fa-smile"></i></span></div>`;
+            }
+            let html = '<div class="reactions-container">';
+            for (const emoji of REACTION_EMOJIS) {
+                if (reactions[emoji]) {
+                    const users = Object.keys(reactions[emoji]);
+                    const count = users.length;
+                    if (count > 0) {
+                        const isMine = me && users.includes(me.user);
+                        html += `<span class="reaction-chip ${isMine ? 'my-reaction' : ''}" onclick="event.stopPropagation(); toggleReaction('${msgKey}', '${emoji}')"><span class="r-emoji">${emoji}</span><span class="r-count">${count}</span></span>`;
+                    }
+                }
+            }
+            html += `<span class="reaction-add-btn" onclick="event.stopPropagation(); showReactionPicker('${msgKey}', this)"><i class="far fa-smile"></i></span></div>`;
+            return html;
+        }
+
         // ✅ دالة تسجيل الدخول / إنشاء الحساب
         window.attemptLogin = async () => {
             const uid = document.getElementById('user-id').value.trim().toLowerCase();
@@ -345,6 +385,9 @@ import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebas
         }
 
         function startChat() {
+            // مراقبة الكتابة
+            startTypingListener();
+            
             // مراقبة الرسائل
             onValue(query(ref(db, 'messages'), limitToLast(100)), async snap => {
                 const flow = document.getElementById('chat-flow');
@@ -382,8 +425,10 @@ import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebas
                         content = `<img src="${m.txt}" class="bubble-image" onclick="openImageModal('${m.txt}')" alt="صورة">`;
                         if (m.caption) content += `<div class="image-caption">${m.caption}</div>`;
                     } else {
-                        content = m.txt;
+                        content = processMessageText(m.txt);
                     }
+                    
+                    const safeM = JSON.stringify(m).replace(/"/g, '&quot;').replace(/'/g, '&#39;');
                     
                     div.innerHTML = `
                         <div class="msg-header">
@@ -394,10 +439,11 @@ import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebas
                             </div>
                             ${m.uid === me.user ? `<img src="${userAvatar}" class="msg-avatar" alt="${m.name}" onclick="openUserAvatarModal('${userAvatar}')" onerror="this.src='https://api.dicebear.com/7.x/avataaars/svg?seed=${m.uid}'">` : ''}
                         </div>
-                        <div class="bubble ${isBanned ? 'banned-msg' : ''}" onclick="openMenu('${child.key}', ${JSON.stringify(m).replace(/"/g, '&quot;')})">
+                        <div class="bubble ${isBanned ? 'banned-msg' : ''}" onclick="openMenu('${child.key}', ${safeM})">
                             ${m.reply ? `<div class="reply-preview"><span class="reply-name">${m.reply.name}</span><div class="reply-text">${m.reply.txt.substring(0, 50)}${m.reply.txt.length > 50 ? '...' : ''}</div></div>` : ''}
                             ${content}
                         </div>
+                        ${renderReactions(child.key, m.reactions)}
                     `;
                     flow.appendChild(div);
 
@@ -545,6 +591,8 @@ import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebas
                 }
                 document.getElementById('msg-input').value = '';
                 cancelReply();
+                // مسح حالة الكتابة
+                remove(ref(db, `typing/${me.user}`)).catch(() => {});
             } catch (error) {
                 showNotification('❌ فشل في إرسال الرسالة');
             }
@@ -1106,6 +1154,89 @@ import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebas
         window.closeForwardModal = (e) => { if (e.target === document.getElementById('modal-forward')) document.getElementById('modal-forward').style.display = 'none'; };
 
         document.getElementById('msg-input').addEventListener('keypress', (e) => { if (e.key === 'Enter') sendMessage(); });
+
+        // === نظام مؤشر الكتابة ===
+        let typingTimeout;
+        document.getElementById('msg-input').addEventListener('input', () => {
+            if (!me || !isFirebaseReady) return;
+            set(ref(db, `typing/${me.user}`), { name: me.name, time: Date.now() }).catch(() => {});
+            clearTimeout(typingTimeout);
+            typingTimeout = setTimeout(() => {
+                remove(ref(db, `typing/${me.user}`)).catch(() => {});
+            }, 3000);
+        });
+
+        function startTypingListener() {
+            onValue(ref(db, 'typing'), snap => {
+                const indicator = document.getElementById('typing-indicator');
+                const typingUsers = [];
+                const now = Date.now();
+                if (snap.exists()) {
+                    snap.forEach(child => {
+                        const t = child.val();
+                        if (child.key !== me.user && t.time && (now - t.time) < 5000) {
+                            typingUsers.push(t.name);
+                        }
+                    });
+                }
+                if (typingUsers.length > 0) {
+                    indicator.style.display = 'flex';
+                    const nameText = typingUsers.length === 1 ? typingUsers[0] : typingUsers.slice(0, 2).join(' و ');
+                    indicator.querySelector('span').innerHTML = `<span class="typing-name">${nameText}</span> ${typingUsers.length === 1 ? 'يكتب' : 'يكتبون'}`;
+                } else {
+                    indicator.style.display = 'none';
+                }
+            }, () => {});
+        }
+
+        // === نظام الريأكشنات ===
+        window.toggleReaction = async (msgId, emoji) => {
+            if (!me) return;
+            const reactionPath = `messages/${msgId}/reactions/${emoji}/${me.user}`;
+            try {
+                const snap = await get(ref(db, reactionPath));
+                if (snap.exists()) {
+                    await remove(ref(db, reactionPath));
+                } else {
+                    await set(ref(db, reactionPath), { name: me.name, time: Date.now() });
+                }
+                hideReactionPicker();
+            } catch (e) {
+                console.error('Reaction error:', e);
+            }
+        };
+
+        window.showReactionPicker = (msgId, btnEl) => {
+            hideReactionPicker();
+            const rect = btnEl.getBoundingClientRect();
+            const picker = document.createElement('div');
+            picker.className = 'reaction-picker-popup';
+            picker.id = 'active-reaction-picker';
+            REACTION_EMOJIS.forEach(emoji => {
+                const btn = document.createElement('button');
+                btn.textContent = emoji;
+                btn.onclick = (e) => { e.stopPropagation(); toggleReaction(msgId, emoji); };
+                picker.appendChild(btn);
+            });
+            document.body.appendChild(picker);
+            const pickerW = 260;
+            let left = rect.left + rect.width / 2 - pickerW / 2;
+            if (left < 10) left = 10;
+            if (left + pickerW > window.innerWidth - 10) left = window.innerWidth - pickerW - 10;
+            picker.style.left = left + 'px';
+            picker.style.top = (rect.top - 50) + 'px';
+        };
+
+        window.hideReactionPicker = () => {
+            const existing = document.getElementById('active-reaction-picker');
+            if (existing) existing.remove();
+        };
+
+        document.addEventListener('click', (e) => {
+            if (!e.target.closest('.reaction-picker-popup') && !e.target.closest('.reaction-add-btn')) {
+                hideReactionPicker();
+            }
+        });
 
         // تهيئة Firebase عند تحميل الصفحة والتحقق من الجلسة المحفوظة
         document.addEventListener('DOMContentLoaded', async () => {
