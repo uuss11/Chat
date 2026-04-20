@@ -24,6 +24,12 @@
         [data-theme="emerald"] { --primary: #00f5d4; --primary-glow: rgba(0, 245, 212, 0.4); --secondary: #00bbf9; --accent: #9b5de5; --bg-gradient-1: #0a1a15; --bg-gradient-2: #0d2b1d; --bg-gradient-3: #0a3d2e; }
         [data-theme="rose"] { --primary: #ff99ac; --primary-glow: rgba(255, 153, 172, 0.4); --secondary: #ff5c8d; --accent: #ff006e; --bg-gradient-1: #1a0a12; --bg-gradient-2: #2d151f; --bg-gradient-3: #3d1525; }
         [data-theme="gold"] { --primary: #ffd700; --primary-glow: rgba(255, 215, 0, 0.4); --secondary: #b8860b; --accent: #ff8c00; --bg-gradient-1: #1a150a; --bg-gradient-2: #2d2515; --bg-gradient-3: #3d3015; }
+        [data-theme="midnight"] { --primary: #818cf8; --primary-glow: rgba(129, 140, 248, 0.4); --secondary: #4338ca; --accent: #a78bfa; --bg-gradient-1: #020617; --bg-gradient-2: #0f172a; --bg-gradient-3: #1e1b4b; }
+        [data-theme="cherry"] { --primary: #fb7185; --primary-glow: rgba(251, 113, 133, 0.4); --secondary: #be123c; --accent: #fda4af; --bg-gradient-1: #1a0507; --bg-gradient-2: #300a0e; --bg-gradient-3: #4c0519; }
+        [data-theme="arctic"] { --primary: #67e8f9; --primary-glow: rgba(103, 232, 249, 0.4); --secondary: #06b6d4; --accent: #a5f3fc; --bg-gradient-1: #042f2e; --bg-gradient-2: #083344; --bg-gradient-3: #0c4a6e; }
+        [data-theme="lavender"] { --primary: #d8b4fe; --primary-glow: rgba(216, 180, 254, 0.4); --secondary: #a855f7; --accent: #f0abfc; --bg-gradient-1: #1a0a2e; --bg-gradient-2: #2e1065; --bg-gradient-3: #3b0764; }
+        [data-theme="neon"] { --primary: #4ade80; --primary-glow: rgba(74, 222, 128, 0.4); --secondary: #f43f5e; --accent: #22d3ee; --bg-gradient-1: #022c22; --bg-gradient-2: #052e16; --bg-gradient-3: #0a0a0a; }
+        [data-theme="coffee"] { --primary: #d4a574; --primary-glow: rgba(212, 165, 116, 0.4); --secondary: #92400e; --accent: #f59e0b; --bg-gradient-1: #1c1210; --bg-gradient-2: #292018; --bg-gradient-3: #3d2e1e; }
 
         * { box-sizing: border-box; font-family: 'Cairo', 'Tajawal', sans-serif; -webkit-tap-highlight-color: transparent; margin: 0; padding: 0; }
         body, html { margin: 0; padding: 0; width: 100%; height: 100%; overflow: hidden; }
@@ -68,18 +74,31 @@
         .catbox-link:hover { background: var(--primary); color: #000; }
         .avatar-hint { font-size: 0.7rem; color: var(--text-muted); margin-top: 6px; }
 
-        .theme-selector { margin: 20px 0; }
-        .theme-label { font-size: 0.8rem; color: var(--text-secondary); margin-bottom: 10px; display: block; }
-        .theme-options { display: flex; justify-content: center; gap: 10px; flex-wrap: wrap; }
-        .theme-option { width: 36px; height: 36px; border-radius: 50%; cursor: pointer; border: 3px solid transparent; transition: all 0.3s ease; }
-        .theme-option:hover { transform: scale(1.1); }
-        .theme-option.active { border-color: #fff; box-shadow: 0 0 20px rgba(255,255,255,0.5); }
+        .theme-selector { margin: 20px 0; padding: 18px; border-radius: 20px; background: rgba(0, 0, 0, 0.2); border: 1px solid var(--glass-border); }
+        .theme-label { font-size: 0.85rem; color: var(--text-secondary); margin-bottom: 14px; display: block; font-weight: 600; }
+        .theme-options { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; justify-items: center; }
+        .theme-option { width: 52px; height: 52px; border-radius: 50%; cursor: pointer; border: 3px solid transparent; transition: all 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275); position: relative; box-shadow: 0 4px 15px rgba(0,0,0,0.3); }
+        .theme-option::before { content: ''; position: absolute; inset: -1px; border-radius: 50%; background: inherit; filter: blur(8px); opacity: 0; transition: opacity 0.3s ease; z-index: -1; }
+        .theme-option::after { content: attr(data-name); position: absolute; bottom: -20px; left: 50%; transform: translateX(-50%); font-size: 0.55rem; color: var(--text-muted); white-space: nowrap; opacity: 0; transition: all 0.3s ease; pointer-events: none; }
+        .theme-option:hover { transform: scale(1.2) translateY(-4px); }
+        .theme-option:hover::before { opacity: 0.5; }
+        .theme-option:hover::after { opacity: 1; bottom: -22px; }
+        .theme-option.active { border-color: #fff; box-shadow: 0 0 25px rgba(255,255,255,0.4), 0 0 50px var(--primary-glow); transform: scale(1.15); }
+        .theme-option.active::before { opacity: 0.6; }
+        .theme-option.active::after { opacity: 1; bottom: -22px; color: var(--text-primary); font-weight: 600; }
+        @keyframes themeRing { 0% { transform: scale(1) rotate(0deg); } 50% { transform: scale(1.05) rotate(180deg); } 100% { transform: scale(1) rotate(360deg); } }
         .theme-option[data-theme="ocean"] { background: linear-gradient(135deg, #00d4ff, #7b2cbf); }
         .theme-option[data-theme="purple"] { background: linear-gradient(135deg, #e0aaff, #7b2cbf); }
         .theme-option[data-theme="sunset"] { background: linear-gradient(135deg, #ff9e00, #ff006e); }
         .theme-option[data-theme="emerald"] { background: linear-gradient(135deg, #00f5d4, #00bbf9); }
         .theme-option[data-theme="rose"] { background: linear-gradient(135deg, #ff99ac, #ff5c8d); }
         .theme-option[data-theme="gold"] { background: linear-gradient(135deg, #ffd700, #b8860b); }
+        .theme-option[data-theme="midnight"] { background: linear-gradient(135deg, #818cf8, #4338ca); }
+        .theme-option[data-theme="cherry"] { background: linear-gradient(135deg, #fb7185, #be123c); }
+        .theme-option[data-theme="arctic"] { background: linear-gradient(135deg, #67e8f9, #06b6d4); }
+        .theme-option[data-theme="lavender"] { background: linear-gradient(135deg, #d8b4fe, #a855f7); }
+        .theme-option[data-theme="neon"] { background: linear-gradient(135deg, #4ade80, #f43f5e); }
+        .theme-option[data-theme="coffee"] { background: linear-gradient(135deg, #d4a574, #92400e); }
 
         .app-container { display: none; flex-direction: column; height: 100dvh; width: 100%; }
         .app-header { padding: 10px 15px; display: flex; align-items: center; justify-content: space-between; border-bottom: 1px solid var(--glass-border); background: rgba(0, 0, 0, 0.3); backdrop-filter: blur(20px); flex-shrink: 0; }

@@ -113,7 +113,7 @@ import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebas
         });
 
         window.toggleTheme = () => {
-            const themes = ['ocean', 'purple', 'sunset', 'emerald', 'rose', 'gold'];
+            const themes = ['ocean', 'purple', 'sunset', 'emerald', 'rose', 'gold', 'midnight', 'cherry', 'arctic', 'lavender', 'neon', 'coffee'];
             const currentIndex = themes.indexOf(currentTheme);
             const nextIndex = (currentIndex + 1) % themes.length;
             currentTheme = themes[nextIndex];
@@ -122,7 +122,7 @@ import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebas
             showNotification(`تم تغيير الثيم إلى ${getThemeName(currentTheme)}`);
         };
 
-        const getThemeName = (theme) => ({ ocean: 'Ocean Blue', purple: 'Royal Purple', sunset: 'Sunset Glow', emerald: 'Emerald City', rose: 'Rose Garden', gold: 'Golden Hour' }[theme]);
+        const getThemeName = (theme) => ({ ocean: '🌊 أوشن', purple: '👑 بنفسجي', sunset: '🌅 غروب', emerald: '💎 زمرد', rose: '🌹 وردي', gold: '✨ ذهبي', midnight: '🌙 منتصف الليل', cherry: '🍒 كرزي', arctic: '❄️ جليدي', lavender: '💜 لافندر', neon: '💚 نيون', coffee: '☕ قهوة' }[theme]);
 
         function showNotification(text) {
             const notif = document.getElementById('notification');
