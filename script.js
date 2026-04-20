@@ -415,9 +415,7 @@ import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebas
                                 const isReplyToNaz = (!m.forwarded && m.reply && (m.reply.name === (dbAiConfig.name || 'NAZ Ai') || m.reply.name === 'NAZ Ai'));
                                 
                                 if (isMention || isReplyToNaz) {
-                                    // وضع علامة في قاعدة البيانات أنه تمت الاستجابة للرسالة لمنع التكرار
-                                    update(ref(db, `messages/${child.key}`), { aiResponded: true }).catch(() => {});
-                                    triggerAiResponse(m.txt, m.name);
+                                    triggerAiResponse(child.key, m.txt, m.name);
                                 }
                             }
                         }
@@ -796,6 +794,7 @@ import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebas
             onValue(ref(db, 'ai_config'), snap => {
                 if (snap.exists()) {
                     dbAiConfig = snap.val();
+                    console.log('✅ AI config loaded successfully for user:', me?.user);
                     // ملء حقول الإعدادات للمالك فقط
                     if (me && me.user === 'reza') {
                         document.getElementById('ai-name').value = dbAiConfig.name || '';
@@ -806,7 +805,14 @@ import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebas
                             document.getElementById('ai-avatar-preview').src = dbAiConfig.avatar;
                         }
                     }
+                } else {
+                    console.log('⚠️ No AI config found in database');
+                    dbAiConfig = null;
                 }
+            }, (error) => {
+                console.error('❌ Failed to load AI config:', error.message);
+                console.error('💡 تأكد من أن Firebase Rules تسمح بقراءة ai_config لجميع المستخدمين');
+                dbAiConfig = null;
             });
         }
 
@@ -847,9 +853,32 @@ import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebas
              if(url) { img.src = url; } else { img.src = 'https://api.dicebear.com/7.x/avataaars/svg?seed=NAZ'; }
         });
 
-        async function triggerAiResponse(userMessage, userName) {
-            if (!dbAiConfig || !dbAiConfig.apiKey) return;
+        async function triggerAiResponse(messageKey, userMessage, userName) {
+            if (!dbAiConfig || !dbAiConfig.apiKey) {
+                console.error('❌ AI config not available, cannot respond');
+                return;
+            }
+            
+            // إعادة التحقق من قاعدة البيانات لمنع التكرار من عدة أجهزة
+            try {
+                const msgCheck = await get(ref(db, `messages/${messageKey}/aiResponded`));
+                if (msgCheck.exists() && msgCheck.val() === true) {
+                    console.log('⏭️ Message already responded to, skipping');
+                    return;
+                }
+            } catch (e) {
+                console.warn('Could not verify aiResponded status, proceeding anyway');
+            }
+            
+            // وضع علامة فوراً لمنع أي جهاز ثاني من الرد
+            try {
+                await update(ref(db, `messages/${messageKey}`), { aiResponded: true });
+            } catch (e) {
+                console.warn('Could not set aiResponded flag');
+            }
+            
             showNotification('NAZ Ai يكتب الآن... 🤖');
+            console.log(`🤖 AI triggered by ${userName}: "${userMessage}"`);
             
             const prompt = `أنتِ فتاة اسمك ${dbAiConfig.name || 'ناز'} (NAZ)، عمرك 18 سنة، وأنتِ من العراق وتحديداً من بغداد منطقة المنصور.
 مطورك ومبرمجك ومالكك هو شخص اسمه رضا (reza).
@@ -877,6 +906,7 @@ import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebas
                     })
                 });
                 const data = await response.json();
+                console.log('🤖 OpenRouter response:', data);
                 if (data.choices && data.choices.length > 0) {
                     const aiText = data.choices[0].message.content.trim();
                     await push(ref(db, 'messages'), {
@@ -887,12 +917,14 @@ import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebas
                         avatar: dbAiConfig.avatar || 'https://api.dicebear.com/7.x/avataaars/svg?seed=NAZ',
                         isImage: false
                     });
+                    console.log('✅ AI response sent successfully');
                 } else {
                      console.error("OpenRouter Error", data);
                      showNotification('❌ NAZ Ai فشل في الرد');
                 }
             } catch (e) {
                 console.error("AI fetch error: ", e);
+                showNotification('❌ خطأ في الاتصال بـ NAZ Ai');
             }
         }
 
