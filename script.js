@@ -471,8 +471,8 @@ import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebas
             // مراقبة الكتابة
             startTypingListener();
             
-            // مراقبة الرسائل
-            onValue(query(ref(db, 'messages'), limitToLast(100)), async snap => {
+            // مراقبة الرسائل (آخر 250 رسالة)
+            onValue(query(ref(db, 'messages'), limitToLast(250)), async snap => {
                 const flow = document.getElementById('chat-flow');
                 flow.innerHTML = '';
                 
@@ -608,7 +608,36 @@ import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebas
                     });
                 }
             });
+            
+            // تنظيف دوري للرسائل القديمة (للمالك فقط)
+            if (me.user === 'reza') {
+                setTimeout(autoCleanupMessages, 10000); // تنظيف بعد 10 ثواني من الدخول
+            }
         }
+        
+        // 🧹 دالة تنظيف الرسائل القديمة (أكثر من 250) لمنع تضخم قاعدة البيانات
+        async function autoCleanupMessages() {
+            if (me.user !== 'reza') return;
+            try {
+                // جلب كل الرسائل (غير مكلف كثيراً إذا كان الشات لا يزال صغيراً)
+                const snap = await get(ref(db, 'messages'));
+                if (snap.exists()) {
+                    const allKeys = Object.keys(snap.val());
+                    if (allKeys.length > 250) {
+                        // أخذ المفاتيح القديمة (ما عدا آخر 250)
+                        const keysToDelete = allKeys.slice(0, allKeys.length - 250);
+                        const updates = {};
+                        keysToDelete.forEach(key => updates[key] = null);
+                        
+                        await update(ref(db, 'messages'), updates);
+                        console.log(`🧹 Auto-cleanup: Removed ${keysToDelete.length} old messages.`);
+                    }
+                }
+            } catch (err) {
+                console.error('Cleanup error:', err);
+            }
+        }
+
 
         // إظهار إشعار الحظر
         function showBanNotification(username, reason) {
