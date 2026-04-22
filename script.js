@@ -5,6 +5,12 @@ import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebas
         // ============================================
         // 🔐 Security Utilities
         // ============================================
+
+        // 🛡️ تحذير أمني في الكونسول
+        console.log('%c⚠️ تحذير أمني!', 'color: red; font-size: 24px; font-weight: bold;');
+        console.log('%cإذا طلب منك شخص لصق كود هنا، فهو يحاول اختراق حسابك!', 'color: red; font-size: 14px;');
+        console.log('%cلا تلصق أي كود هنا أبداً.', 'color: orange; font-size: 14px;');
+
         async function hashPassword(password) {
             const encoder = new TextEncoder();
             const data = encoder.encode(password + '_RZ_SECURE_2026');
@@ -19,7 +25,53 @@ import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebas
             return Array.from(array).map(b => b.toString(16).padStart(2, '0')).join('');
         }
 
+        // 🛡️ دالة تنقية HTML لمنع XSS
+        function sanitizeHTML(str) {
+            if (!str) return '';
+            return String(str)
+                .replace(/&/g, '&amp;')
+                .replace(/</g, '&lt;')
+                .replace(/>/g, '&gt;')
+                .replace(/"/g, '&quot;')
+                .replace(/'/g, '&#39;')
+                .replace(/`/g, '&#96;');
+        }
+
+        // 🛡️ تنقية URLs لمنع javascript: protocol
+        function sanitizeURL(url) {
+            if (!url) return '';
+            const trimmed = String(url).trim();
+            if (/^javascript:/i.test(trimmed) || /^data:text\/html/i.test(trimmed) || /^vbscript:/i.test(trimmed)) {
+                return '';
+            }
+            return trimmed;
+        }
+
         let adminToken = null; // 🔐 رمز إدارة ديناميكي - لا يُخزن بالكود أبداً
+        let adminTokenExpiry = 0; // 🔐 وقت انتهاء صلاحية الرمز
+        const ADMIN_TOKEN_TTL = 3600000; // ساعة واحدة
+
+        // 🔐 تجديد رمز الإدارة إذا انتهت صلاحيته
+        async function ensureValidAdminToken() {
+            if (!me || me.user !== 'reza') return null;
+            if (adminToken && Date.now() < adminTokenExpiry) return adminToken;
+            
+            adminToken = generateAdminToken();
+            adminTokenExpiry = Date.now() + ADMIN_TOKEN_TTL;
+            try {
+                await set(ref(db, '_adminAuth'), { 
+                    token: adminToken, 
+                    timestamp: Date.now(),
+                    ownerUid: 'reza'
+                });
+                console.log('🔐 Admin token refreshed');
+            } catch (e) {
+                console.warn('⚠️ Could not refresh admin token:', e);
+                adminToken = null;
+                adminTokenExpiry = 0;
+            }
+            return adminToken;
+        }
 
         // ============================================
         // ✅ إعدادات Firebase - تم ملؤها بمعلوماتك
@@ -158,14 +210,21 @@ import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebas
             if (!txt) return '';
             const urlRegex = /(https?:\/\/[^\s<]+)/g;
             const urls = txt.match(urlRegex);
-            let processed = txt.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+            // 🛡️ تنقية النص أولاً لمنع XSS
+            let processed = sanitizeHTML(txt);
             if (urls) {
                 urls.forEach(url => {
                     try {
-                        const domain = new URL(url).hostname.replace('www.', '');
+                        const safeUrl = sanitizeURL(url);
+                        if (!safeUrl) return;
+                        const parsedUrl = new URL(safeUrl);
+                        // 🛡️ فقط HTTP/HTTPS
+                        if (parsedUrl.protocol !== 'http:' && parsedUrl.protocol !== 'https:') return;
+                        const domain = sanitizeHTML(parsedUrl.hostname.replace('www.', ''));
                         const icon = domain.includes('youtube') ? 'fab fa-youtube' : domain.includes('github') ? 'fab fa-github' : domain.includes('twitter') || domain.includes('x.com') ? 'fab fa-twitter' : domain.includes('instagram') ? 'fab fa-instagram' : 'fas fa-external-link-alt';
-                        const linkCard = `<a href="${url}" target="_blank" rel="noopener noreferrer" class="link-preview" onclick="event.stopPropagation()"><div class="link-preview-icon"><i class="${icon}"></i></div><div class="link-preview-info"><div class="link-preview-domain">${domain}</div><div class="link-preview-url">${url.length > 55 ? url.substring(0, 55) + '...' : url}</div></div></a>`;
-                        processed = processed.replace(url, linkCard);
+                        const displayUrl = sanitizeHTML(safeUrl.length > 55 ? safeUrl.substring(0, 55) + '...' : safeUrl);
+                        const linkCard = `<a href="${sanitizeHTML(safeUrl)}" target="_blank" rel="noopener noreferrer" class="link-preview" onclick="event.stopPropagation()"><div class="link-preview-icon"><i class="${icon}"></i></div><div class="link-preview-info"><div class="link-preview-domain">${domain}</div><div class="link-preview-url">${displayUrl}</div></div></a>`;
+                        processed = processed.replace(sanitizeHTML(url), linkCard);
                     } catch { /* skip invalid urls */ }
                 });
             }
@@ -335,14 +394,8 @@ import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebas
                 // بدء الشات
                 if (me.user === 'reza') {
                     document.querySelectorAll('.admin-only').forEach(el => el.style.display = 'flex');
-                    // 🔐 توليد رمز إدارة ديناميكي
-                    adminToken = generateAdminToken();
-                    try {
-                        await set(ref(db, '_adminAuth'), { token: adminToken, timestamp: Date.now() });
-                        console.log('🔐 Admin token generated and stored');
-                    } catch (tokenError) {
-                        console.warn('⚠️ Could not store admin token:', tokenError);
-                    }
+                    // 🔐 توليد رمز إدارة ديناميكي مع TTL
+                    await ensureValidAdminToken();
                 }
                 loadAiConfig();
                 startChat();
@@ -438,11 +491,8 @@ import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebas
                             
                             if (me.user === 'reza') {
                                 document.querySelectorAll('.admin-only').forEach(el => el.style.display = 'flex');
-                                // 🔐 توليد رمز إدارة ديناميكي
-                                adminToken = generateAdminToken();
-                                try {
-                                    await set(ref(db, '_adminAuth'), { token: adminToken, timestamp: Date.now() });
-                                } catch (e) { console.warn('Admin token:', e); }
+                                // 🔐 توليد رمز إدارة ديناميكي مع TTL
+                                await ensureValidAdminToken();
                             }
                             loadAiConfig();
                             
@@ -493,11 +543,17 @@ import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebas
                     
                     const userStatus = allUsers[m.uid] || {};
                     const isBanned = userStatus.isBanned;
-                    const userAvatar = userStatus.avatar || m.avatar || `https://api.dicebear.com/7.x/avataaars/svg?seed=${m.uid}`;
+                    const rawAvatar = userStatus.avatar || m.avatar || `https://api.dicebear.com/7.x/avataaars/svg?seed=${m.uid}`;
+                    const userAvatar = sanitizeURL(rawAvatar) || `https://api.dicebear.com/7.x/avataaars/svg?seed=${sanitizeHTML(m.uid)}`;
                     
                     const div = document.createElement('div');
                     div.className = `msg-container ${m.uid === me.user ? 'mine' : 'others'} msg-anim`;
-                    div.id = `msg-${child.key}`;
+                    div.id = `msg-${sanitizeHTML(child.key)}`;
+                    
+                    // 🛡️ تنقية بيانات المستخدم قبل الإدراج في HTML
+                    const safeName = sanitizeHTML(m.name);
+                    const safeUid = sanitizeHTML(m.uid);
+                    const safeAvatarAttr = sanitizeHTML(userAvatar);
                     
                     const isOwner = m.uid === 'reza';
                     const ownerBadge = isOwner ? '<span class="owner-badge"><i class="fas fa-crown"></i> المالك</span>' : '';
@@ -505,8 +561,10 @@ import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebas
                     
                     let content = '';
                     if (m.isImage) {
-                        content = `<img src="${m.txt}" class="bubble-image" onclick="openImageModal('${m.txt}')" alt="صورة">`;
-                        if (m.caption) content += `<div class="image-caption">${m.caption}</div>`;
+                        const safeImgUrl = sanitizeURL(m.txt) || '';
+                        const safeImgAttr = sanitizeHTML(safeImgUrl);
+                        content = `<img src="${safeImgAttr}" class="bubble-image" onclick="openImageModal('${safeImgAttr}')" alt="صورة">`;
+                        if (m.caption) content += `<div class="image-caption">${sanitizeHTML(m.caption)}</div>`;
                     } else {
                         content = processMessageText(m.txt);
                     }
@@ -515,15 +573,15 @@ import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebas
                     
                     div.innerHTML = `
                         <div class="msg-header">
-                            ${m.uid === me.user ? '' : `<img src="${userAvatar}" class="msg-avatar" alt="${m.name}" onclick="openUserAvatarModal('${userAvatar}')" onerror="this.src='https://api.dicebear.com/7.x/avataaars/svg?seed=${m.uid}'">`}
+                            ${m.uid === me.user ? '' : `<img src="${safeAvatarAttr}" class="msg-avatar" alt="${safeName}" onclick="openUserAvatarModal('${safeAvatarAttr}')" onerror="this.src='https://api.dicebear.com/7.x/avataaars/svg?seed=${safeUid}'">`}
                             <div class="msg-sender-info">
-                                <span class="msg-name">${m.name} ${ownerBadge} ${pinnedBadge}</span>
+                                <span class="msg-name">${safeName} ${ownerBadge} ${pinnedBadge}</span>
                                 <span class="msg-time">${formatTime(m.time)}</span>
                             </div>
-                            ${m.uid === me.user ? `<img src="${userAvatar}" class="msg-avatar" alt="${m.name}" onclick="openUserAvatarModal('${userAvatar}')" onerror="this.src='https://api.dicebear.com/7.x/avataaars/svg?seed=${m.uid}'">` : ''}
+                            ${m.uid === me.user ? `<img src="${safeAvatarAttr}" class="msg-avatar" alt="${safeName}" onclick="openUserAvatarModal('${safeAvatarAttr}')" onerror="this.src='https://api.dicebear.com/7.x/avataaars/svg?seed=${safeUid}'">` : ''}
                         </div>
-                        <div class="bubble ${isBanned ? 'banned-msg' : ''}" onclick="openMenu('${child.key}', ${safeM})">
-                            ${m.reply ? `<div class="reply-preview"><span class="reply-name">${m.reply.name}</span><div class="reply-text">${m.reply.txt.substring(0, 50)}${m.reply.txt.length > 50 ? '...' : ''}</div></div>` : ''}
+                        <div class="bubble ${isBanned ? 'banned-msg' : ''}" onclick="openMenu('${sanitizeHTML(child.key)}', ${safeM})">
+                            ${m.reply ? `<div class="reply-preview"><span class="reply-name">${sanitizeHTML(m.reply.name)}</span><div class="reply-text">${sanitizeHTML(m.reply.txt.substring(0, 50))}${m.reply.txt.length > 50 ? '...' : ''}</div></div>` : ''}
                             ${content}
                         </div>
                         ${renderReactions(child.key, m.reactions)}
@@ -575,12 +633,12 @@ import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebas
                         if (msgSnap.exists()) {
                             const msg = msgSnap.val();
                             pinnedDisplay.innerHTML = `
-                                <div class="pinned-message-container" onclick="scrollToPinnedMessage('${pinnedMessageId}')">
+                                <div class="pinned-message-container" onclick="scrollToPinnedMessage('${sanitizeHTML(pinnedMessageId)}')">
                                     <div class="pinned-header">
                                         <i class="fas fa-thumbtack"></i>
-                                        <span>رسالة مثبتة من ${msg.name}</span>
+                                        <span>رسالة مثبتة من ${sanitizeHTML(msg.name)}</span>
                                     </div>
-                                    <div class="pinned-text">${msg.isImage ? '📷 صورة' : msg.txt}</div>
+                                    <div class="pinned-text">${msg.isImage ? '📷 صورة' : sanitizeHTML(msg.txt)}</div>
                                 </div>
                             `;
                             pinnedDisplay.style.display = 'block';
@@ -644,11 +702,12 @@ import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebas
             const flow = document.getElementById('chat-flow');
             const notifDiv = document.createElement('div');
             notifDiv.className = 'ban-notification';
+            // 🛡️ تنقية بيانات الحظر لمنع XSS
             notifDiv.innerHTML = `
                 <i class="fas fa-ban"></i>
                 <div class="ban-text">
-                    <div class="ban-title">تم حظر المستخدم ${username}</div>
-                    <div class="ban-subtitle">${reason || 'بسبب الانتهاكات'}</div>
+                    <div class="ban-title">تم حظر المستخدم ${sanitizeHTML(username)}</div>
+                    <div class="ban-subtitle">${sanitizeHTML(reason || 'بسبب الانتهاكات')}</div>
                 </div>
             `;
             flow.insertBefore(notifDiv, flow.firstChild);
@@ -894,7 +953,7 @@ import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebas
                     document.getElementById('profile-view-mode').style.display = 'block';
                     document.getElementById('profile-edit-mode').style.display = 'none';
                     
-                    currentViewAvatar = u.avatar || `https://api.dicebear.com/7.x/avataaars/svg?seed=${uid}`;
+                    currentViewAvatar = sanitizeURL(u.avatar) || `https://api.dicebear.com/7.x/avataaars/svg?seed=${sanitizeHTML(uid)}`;
                     document.getElementById('view-avatar').src = currentViewAvatar;
                     document.getElementById('view-name').innerText = u.name;
                     document.getElementById('view-bio').innerText = u.bio || 'لا يوجد بايو';
@@ -990,18 +1049,20 @@ import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebas
                 alert('يرجى وضع API Key');
                 return;
             }
-            if (!adminToken) {
+            // 🔐 تجديد الرمز تلقائياً إذا انتهت صلاحيته
+            const token = await ensureValidAdminToken();
+            if (!token) {
                 showNotification('❌ صلاحية الإدارة غير متوفرة. أعد تسجيل الدخول.');
                 return;
             }
             try {
-                // 🔐 استخدام رمز إدارة ديناميكي بدلاً من كلمة سر ثابتة
+                // 🔐 استخدام رمز إدارة ديناميكي مع TTL
                 await set(ref(db, 'ai_config'), { 
                     name, 
                     apiKey, 
                     model, 
                     avatar,
-                    _authToken: adminToken
+                    _authToken: token
                 });
                 showNotification('تم حفظ إعدادات الذكاء الاصطناعي بنجاح! 🤖');
                 document.getElementById('modal-ai').style.display = 'none';
@@ -1128,13 +1189,17 @@ import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebas
                     const user = u.val();
                     if(user.isBanned) {
                         hasBanned = true;
+                        // 🛡️ تنقية بيانات المستخدم المحظور
+                        const safeAvatar = sanitizeHTML(sanitizeURL(user.avatar) || `https://api.dicebear.com/7.x/avataaars/svg?seed=${sanitizeHTML(u.key)}`);
+                        const safeName = sanitizeHTML(user.name);
+                        const safeKey = sanitizeHTML(u.key);
                         content.innerHTML += `
                             <div class="banned-item">
                                 <div class="banned-user-info">
-                                    <img src="${user.avatar || `https://api.dicebear.com/7.x/avataaars/svg?seed=${u.key}`}" class="banned-avatar" alt="">
-                                    <span class="banned-name">${user.name}</span>
+                                    <img src="${safeAvatar}" class="banned-avatar" alt="">
+                                    <span class="banned-name">${safeName}</span>
                                 </div>
-                                ${me.user === 'reza' ? `<button class="unban-btn" onclick="unban('${u.key}')">فك الحظر</button>` : ''}
+                                ${me.user === 'reza' ? `<button class="unban-btn" onclick="unban('${safeKey}')">فك الحظر</button>` : ''}
                             </div>
                         `;
                     }
@@ -1189,11 +1254,15 @@ import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebas
                     
                     const item = document.createElement('div');
                     item.className = 'member-item';
-                    const avatarUrl = user.avatar || `https://api.dicebear.com/7.x/avataaars/svg?seed=${u.key}`;
+                    // 🛡️ تنقية بيانات الأعضاء
+                    const safeKey = sanitizeHTML(u.key);
+                    const rawAvatarUrl = sanitizeURL(user.avatar) || `https://api.dicebear.com/7.x/avataaars/svg?seed=${safeKey}`;
+                    const safeAvatarUrl = sanitizeHTML(rawAvatarUrl);
+                    const safeMemberName = sanitizeHTML(user.name);
                     item.innerHTML = `
-                        <img src="${avatarUrl}" class="member-avatar" alt="" onclick="openUserAvatarModal('${avatarUrl}')" onerror="this.src='https://api.dicebear.com/7.x/avataaars/svg?seed=${u.key}'">
+                        <img src="${safeAvatarUrl}" class="member-avatar" alt="" onclick="openUserAvatarModal('${safeAvatarUrl}')" onerror="this.src='https://api.dicebear.com/7.x/avataaars/svg?seed=${safeKey}'">
                         <div class="member-info">
-                            <div class="member-name">${user.name} ${u.key === 'reza' ? '👑' : ''}</div>
+                            <div class="member-name">${safeMemberName} ${u.key === 'reza' ? '👑' : ''}</div>
                             <div class="${user.isOnline ? 'member-status' : 'member-owner'}">${user.isOnline ? 'متصل' : 'غير متصل'}</div>
                         </div>
                     `;
@@ -1362,3 +1431,14 @@ import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebas
                 await checkSavedSession();
             }, 1000);
         });
+
+        // ============================================
+        // 🛡️ حماية ضد Console Injection
+        // ============================================
+        // تجميد الإعدادات الحساسة لمنع التعديل من الكونسول
+        Object.freeze(firebaseConfig);
+        Object.freeze(REACTION_EMOJIS);
+
+        // حماية الدوال الأمنية من الاستبدال
+        Object.defineProperty(window, 'sanitizeHTML', { writable: false, configurable: false });
+        Object.defineProperty(window, 'sanitizeURL', { writable: false, configurable: false });
