@@ -3,6 +3,25 @@ import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebas
         import { getDatabase, ref, set, get, push, onValue, query, limitToLast, remove, update, serverTimestamp, onDisconnect } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-database.js";
 
         // ============================================
+        // 🔐 Security Utilities
+        // ============================================
+        async function hashPassword(password) {
+            const encoder = new TextEncoder();
+            const data = encoder.encode(password + '_RZ_SECURE_2026');
+            const hashBuffer = await crypto.subtle.digest('SHA-256', data);
+            const hashArray = Array.from(new Uint8Array(hashBuffer));
+            return hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
+        }
+
+        function generateAdminToken() {
+            const array = new Uint8Array(32);
+            crypto.getRandomValues(array);
+            return Array.from(array).map(b => b.toString(16).padStart(2, '0')).join('');
+        }
+
+        let adminToken = null; // 🔐 رمز إدارة ديناميكي - لا يُخزن بالكود أبداً
+
+        // ============================================
         // ✅ إعدادات Firebase - تم ملؤها بمعلوماتك
         // ============================================
         const firebaseConfig = {
@@ -69,7 +88,8 @@ import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebas
         // حفظ بيانات الجلسة في الكوكيز
         function setCookie(name, value, days = 30) {
             const expires = new Date(Date.now() + days * 864e5).toUTCString();
-            document.cookie = name + '=' + encodeURIComponent(value) + '; expires=' + expires + '; path=/; SameSite=Strict';
+            const secure = location.protocol === 'https:' ? '; Secure' : '';
+            document.cookie = name + '=' + encodeURIComponent(value) + '; expires=' + expires + '; path=/; SameSite=Strict' + secure;
         }
 
         function getCookie(name) {
@@ -138,13 +158,13 @@ import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebas
             if (!txt) return '';
             const urlRegex = /(https?:\/\/[^\s<]+)/g;
             const urls = txt.match(urlRegex);
-            let processed = txt.replace(/</g, '&lt;').replace(/>/g, '&gt;');
+            let processed = txt.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
             if (urls) {
                 urls.forEach(url => {
                     try {
                         const domain = new URL(url).hostname.replace('www.', '');
                         const icon = domain.includes('youtube') ? 'fab fa-youtube' : domain.includes('github') ? 'fab fa-github' : domain.includes('twitter') || domain.includes('x.com') ? 'fab fa-twitter' : domain.includes('instagram') ? 'fab fa-instagram' : 'fas fa-external-link-alt';
-                        const linkCard = `<a href="${url}" target="_blank" rel="noopener" class="link-preview" onclick="event.stopPropagation()"><div class="link-preview-icon"><i class="${icon}"></i></div><div class="link-preview-info"><div class="link-preview-domain">${domain}</div><div class="link-preview-url">${url.length > 55 ? url.substring(0, 55) + '...' : url}</div></div></a>`;
+                        const linkCard = `<a href="${url}" target="_blank" rel="noopener noreferrer" class="link-preview" onclick="event.stopPropagation()"><div class="link-preview-icon"><i class="${icon}"></i></div><div class="link-preview-info"><div class="link-preview-domain">${domain}</div><div class="link-preview-url">${url.length > 55 ? url.substring(0, 55) + '...' : url}</div></div></a>`;
                         processed = processed.replace(url, linkCard);
                     } catch { /* skip invalid urls */ }
                 });
@@ -230,16 +250,37 @@ import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebas
                     return;
                 }
                 
-                // المستخدم موجود - التحقق من كلمة السر
+                // 🔐 المستخدم موجود - التحقق من كلمة السر (مع هاشينج SHA-256)
+                const hashedPass = await hashPassword(pass);
+                
                 if (snap.exists()) {
                     const userData = snap.val();
-                    if (userData.password !== pass) {
+                    let passwordValid = false;
+                    
+                    if (userData.passwordHashed) {
+                        // كلمة المرور مخزونة كهاش - المقارنة بالهاش
+                        passwordValid = (userData.password === hashedPass);
+                    } else {
+                        // كلمة المرور قديمة (plain text) - المقارنة ثم الترحيل
+                        passwordValid = (userData.password === pass);
+                        if (passwordValid) {
+                            // 🔐 ترحيل: تحويل كلمة المرور إلى هاش
+                            await update(ref(db, 'users/' + uid), { 
+                                password: hashedPass, 
+                                passwordHashed: true 
+                            });
+                            console.log('🔐 Password migrated to hash for user:', uid);
+                        }
+                    }
+                    
+                    if (!passwordValid) {
                         hideLoading();
                         showError('❌ كلمة المرور غير صحيحة!');
                         return;
                     }
                     // تسجيل دخول ناجح
                     me = userData;
+                    me.password = hashedPass; // استخدام الهاش في الذاكرة
                     await update(ref(db, 'users/' + uid), { 
                         theme: currentTheme, 
                         isOnline: true, 
@@ -247,11 +288,12 @@ import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebas
                     });
                     showNotification('✅ تم تسجيل الدخول بنجاح!');
                 } else {
-                    // إنشاء حساب جديد
+                    // إنشاء حساب جديد (كلمة المرور مهشّنة)
                     me = { 
                         user: uid, 
                         name: name, 
-                        password: pass,
+                        password: hashedPass,
+                        passwordHashed: true,
                         bio: 'لا يوجد بايو',
                         avatar: avatar || `https://api.dicebear.com/7.x/avataaars/svg?seed=${uid}`,
                         isOwner: uid === 'reza',
@@ -263,9 +305,9 @@ import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebas
                     showNotification('✅ تم إنشاء الحساب بنجاح!');
                 }
                 
-                // حفظ الجلسة في الكوكيز
+                // حفظ الجلسة في الكوكيز (كلمة المرور مهشّنة)
                 setCookie('reza_user', uid);
-                setCookie('reza_pass', pass);
+                setCookie('reza_pass', hashedPass);
                 
                 // إعداد onDisconnect
                 try {
@@ -293,6 +335,14 @@ import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebas
                 // بدء الشات
                 if (me.user === 'reza') {
                     document.querySelectorAll('.admin-only').forEach(el => el.style.display = 'flex');
+                    // 🔐 توليد رمز إدارة ديناميكي
+                    adminToken = generateAdminToken();
+                    try {
+                        await set(ref(db, '_adminAuth'), { token: adminToken, timestamp: Date.now() });
+                        console.log('🔐 Admin token generated and stored');
+                    } catch (tokenError) {
+                        console.warn('⚠️ Could not store admin token:', tokenError);
+                    }
                 }
                 loadAiConfig();
                 startChat();
@@ -339,7 +389,35 @@ import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebas
                     const snap = await get(ref(db, 'users/' + savedUser));
                     if (snap.exists()) {
                         const userData = snap.val();
-                        if (userData.password === savedPass && !userData.isBanned) {
+                        
+                        // 🔐 التحقق من كلمة المرور (دعم الهاش والنص القديم)
+                        let isValid = false;
+                        if (userData.passwordHashed) {
+                            // كلمة المرور في الكوكي قد تكون هاش أو نص قديم
+                            if (userData.password === savedPass) {
+                                isValid = true; // الكوكي تحتوي هاش
+                            } else {
+                                const hashedSaved = await hashPassword(savedPass);
+                                if (userData.password === hashedSaved) {
+                                    isValid = true;
+                                    setCookie('reza_pass', hashedSaved); // تحديث الكوكي
+                                }
+                            }
+                        } else {
+                            // مستخدم قديم - ترحيل كلمة المرور
+                            if (userData.password === savedPass) {
+                                isValid = true;
+                                const hashed = await hashPassword(savedPass);
+                                await update(ref(db, 'users/' + savedUser), { 
+                                    password: hashed, 
+                                    passwordHashed: true 
+                                });
+                                setCookie('reza_pass', hashed);
+                                console.log('🔐 Auto-login: password migrated for:', savedUser);
+                            }
+                        }
+                        
+                        if (isValid && !userData.isBanned) {
                             // تسجيل دخول تلقائي
                             me = userData;
                             currentTheme = me.theme || 'ocean';
@@ -360,6 +438,11 @@ import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebas
                             
                             if (me.user === 'reza') {
                                 document.querySelectorAll('.admin-only').forEach(el => el.style.display = 'flex');
+                                // 🔐 توليد رمز إدارة ديناميكي
+                                adminToken = generateAdminToken();
+                                try {
+                                    await set(ref(db, '_adminAuth'), { token: adminToken, timestamp: Date.now() });
+                                } catch (e) { console.warn('Admin token:', e); }
                             }
                             loadAiConfig();
                             
@@ -447,8 +530,8 @@ import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebas
                     `;
                     flow.appendChild(div);
 
-                    // AI Logic
-                    if (!isInitialLoad && dbAiConfig && dbAiConfig.apiKey) {
+                    // AI Logic - 🔐 فقط جهاز المالك يقدر يرسل ردود AI
+                    if (!isInitialLoad && dbAiConfig && dbAiConfig.apiKey && me.user === 'reza') {
                         if (!processedAiMsgs.has(child.key) && m.uid !== 'naz_ai') {
                             processedAiMsgs.add(child.key);
                             
@@ -878,14 +961,18 @@ import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebas
                 alert('يرجى وضع API Key');
                 return;
             }
+            if (!adminToken) {
+                showNotification('❌ صلاحية الإدارة غير متوفرة. أعد تسجيل الدخول.');
+                return;
+            }
             try {
-                // Sending the admin_secret to bypass Firebase security rules as configured
+                // 🔐 استخدام رمز إدارة ديناميكي بدلاً من كلمة سر ثابتة
                 await set(ref(db, 'ai_config'), { 
                     name, 
                     apiKey, 
                     model, 
                     avatar,
-                    admin_secret: 'REZA_BOSS_2026'
+                    _authToken: adminToken
                 });
                 showNotification('تم حفظ إعدادات الذكاء الاصطناعي بنجاح! 🤖');
                 document.getElementById('modal-ai').style.display = 'none';
