@@ -1,0 +1,33 @@
+# ===========================
+# 🔐 REZA Chat .gitignore
+# ===========================
+
+# Dependencies
+node_modules/
+
+# Environment & Secrets
+.env
+.env.*
+*.key
+*.pem
+
+# IDE
+.vscode/
+.idea/
+
+# OS
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Build
+dist/
+build/
+
+# ⚠️ IMPORTANT: When deploying to a web server,
+# make sure the .git/ directory is NOT accessible publicly.
+# Configure your web server to block access to .git/
+# Example for Apache (.htaccess):
+#   RedirectMatch 404 /\.git
+# Example for Nginx:
+#   location ~ /\.git { deny all; }

@@ -1,0 +1,69 @@
+{
+  "rules": {
+    "users": {
+      ".read": true,
+      "$uid": {
+        ".write": true,
+        ".validate": "newData.hasChildren(['user', 'name', 'password']) && newData.child('user').isString() && newData.child('name').isString() && newData.child('password').isString() && newData.child('user').val().length > 0 && newData.child('user').val().length <= 30 && newData.child('name').val().length > 0 && newData.child('name').val().length <= 50",
+        "isOwner": {
+          ".validate": "newData.isBoolean() && (newData.val() === false || $uid === 'reza')"
+        },
+        "isBanned": {
+          ".validate": "newData.isBoolean()"
+        },
+        "password": {
+          ".validate": "newData.isString() && newData.val().length >= 6"
+        },
+        "bio": {
+          ".validate": "newData.isString() && newData.val().length <= 300"
+        },
+        "name": {
+          ".validate": "newData.isString() && newData.val().length > 0 && newData.val().length <= 50"
+        },
+        "avatar": {
+          ".validate": "newData.isString() && newData.val().length <= 500"
+        }
+      }
+    },
+    "messages": {
+      ".read": true,
+      ".write": true,
+      "$messageId": {
+        ".validate": "newData.hasChildren(['uid', 'name', 'txt', 'time']) && newData.child('uid').isString() && newData.child('name').isString() && newData.child('txt').isString() && newData.child('uid').val().length > 0 && newData.child('uid').val().length <= 30 && newData.child('name').val().length > 0 && newData.child('name').val().length <= 50 && newData.child('txt').val().length <= 5000"
+      }
+    },
+    "ai_config": {
+      ".read": true,
+      ".write": "newData.child('_authToken').val() === root.child('_adminAuth/token').val() && root.child('_adminAuth/token').val() != null",
+      ".validate": "newData.hasChildren(['name', 'model', '_authToken']) && newData.child('name').isString() && newData.child('model').isString() && newData.child('name').val().length <= 50 && newData.child('model').val().length <= 100"
+    },
+    "_adminAuth": {
+      ".read": false,
+      ".write": "!data.exists() || (newData.child('ownerUid').val() === 'reza' && newData.child('timestamp').val() > data.child('timestamp').val())",
+      ".validate": "newData.hasChildren(['token', 'timestamp', 'ownerUid']) && newData.child('token').isString() && newData.child('token').val().length === 64 && newData.child('ownerUid').val() === 'reza'"
+    },
+    "typing": {
+      ".read": true,
+      ".write": true,
+      "$uid": {
+        ".validate": "newData.hasChildren(['name', 'time']) && newData.child('name').isString() && newData.child('name').val().length <= 50"
+      }
+    },
+    "pinnedMessage": {
+      ".read": true,
+      ".write": true,
+      ".validate": "!newData.exists() || (newData.hasChildren(['messageId', 'pinnedBy', 'pinnedAt']) && newData.child('pinnedBy').isString())"
+    },
+    "bannedNotifications": {
+      ".read": true,
+      ".write": true,
+      "$notifId": {
+        ".validate": "newData.hasChildren(['username', 'uid', 'bannedBy', 'bannedAt']) && newData.child('username').isString() && newData.child('uid').isString() && newData.child('bannedBy').isString() && newData.child('username').val().length <= 50"
+      }
+    },
+    "$other": {
+      ".read": false,
+      ".write": false
+    }
+  }
+}

@@ -47,6 +47,18 @@ import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebas
             return trimmed;
         }
 
+        // 🎲 توليد رابط أفاتار عشوائي (ذكر أو أنثى)
+        function getDefaultAvatarUrl(seed) {
+            if (!seed) seed = 'NAZ';
+            let hash = 0;
+            const str = String(seed);
+            for (let i = 0; i < str.length; i++) {
+                hash = str.charCodeAt(i) + ((hash << 5) - hash);
+            }
+            const gender = Math.abs(hash) % 2 === 0 ? 'male' : 'female';
+            return `https://xsgames.co/randomusers/avatar.php?g=${gender}&v=${encodeURIComponent(str)}`;
+        }
+
         let adminToken = null; // 🔐 رمز إدارة ديناميكي - لا يُخزن بالكود أبداً
         let adminTokenExpiry = 0; // 🔐 وقت انتهاء صلاحية الرمز
         const ADMIN_TOKEN_TTL = 3600000; // ساعة واحدة
@@ -354,7 +366,7 @@ import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebas
                         password: hashedPass,
                         passwordHashed: true,
                         bio: 'لا يوجد بايو',
-                        avatar: avatar || `https://api.dicebear.com/7.x/avataaars/svg?seed=${uid}`,
+                        avatar: avatar || getDefaultAvatarUrl(uid),
                         isOwner: uid === 'reza',
                         theme: currentTheme,
                         joinedAt: Date.now(),
@@ -543,8 +555,8 @@ import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebas
                     
                     const userStatus = allUsers[m.uid] || {};
                     const isBanned = userStatus.isBanned;
-                    const rawAvatar = userStatus.avatar || m.avatar || `https://api.dicebear.com/7.x/avataaars/svg?seed=${m.uid}`;
-                    const userAvatar = sanitizeURL(rawAvatar) || `https://api.dicebear.com/7.x/avataaars/svg?seed=${sanitizeHTML(m.uid)}`;
+                    const rawAvatar = userStatus.avatar || m.avatar || getDefaultAvatarUrl(m.uid);
+                    const userAvatar = sanitizeURL(rawAvatar) || getDefaultAvatarUrl(sanitizeHTML(m.uid));
                     
                     const div = document.createElement('div');
                     div.className = `msg-container ${m.uid === me.user ? 'mine' : 'others'} msg-anim`;
@@ -573,12 +585,12 @@ import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebas
                     
                     div.innerHTML = `
                         <div class="msg-header">
-                            ${m.uid === me.user ? '' : `<img src="${safeAvatarAttr}" class="msg-avatar" alt="${safeName}" onclick="openUserAvatarModal('${safeAvatarAttr}')" onerror="this.src='https://api.dicebear.com/7.x/avataaars/svg?seed=${safeUid}'">`}
+                            ${m.uid === me.user ? '' : `<img src="${safeAvatarAttr}" class="msg-avatar" alt="${safeName}" onclick="openUserAvatarModal('${safeAvatarAttr}')" onerror="this.src='${getDefaultAvatarUrl(safeUid)}'">`}
                             <div class="msg-sender-info">
                                 <span class="msg-name">${safeName} ${ownerBadge} ${pinnedBadge}</span>
                                 <span class="msg-time">${formatTime(m.time)}</span>
                             </div>
-                            ${m.uid === me.user ? `<img src="${safeAvatarAttr}" class="msg-avatar" alt="${safeName}" onclick="openUserAvatarModal('${safeAvatarAttr}')" onerror="this.src='https://api.dicebear.com/7.x/avataaars/svg?seed=${safeUid}'">` : ''}
+                            ${m.uid === me.user ? `<img src="${safeAvatarAttr}" class="msg-avatar" alt="${safeName}" onclick="openUserAvatarModal('${safeAvatarAttr}')" onerror="this.src='${getDefaultAvatarUrl(safeUid)}'">` : ''}
                         </div>
                         <div class="bubble ${isBanned ? 'banned-msg' : ''}" onclick="openMenu('${sanitizeHTML(child.key)}', ${safeM})">
                             ${m.reply ? `<div class="reply-preview"><span class="reply-name">${sanitizeHTML(m.reply.name)}</span><div class="reply-text">${sanitizeHTML(m.reply.txt.substring(0, 50))}${m.reply.txt.length > 50 ? '...' : ''}</div></div>` : ''}
@@ -816,12 +828,12 @@ import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebas
             get(ref(db, 'users/' + m.uid)).then(snap => {
                 if (snap.exists()) {
                     const user = snap.val();
-                    currentMenuAvatar = user.avatar || `https://api.dicebear.com/7.x/avataaars/svg?seed=${m.uid}`;
+                    currentMenuAvatar = user.avatar || getDefaultAvatarUrl(m.uid);
                     document.getElementById('menu-avatar').src = currentMenuAvatar;
                     document.getElementById('menu-username').textContent = user.name;
                 }
             }).catch(() => {
-                currentMenuAvatar = `https://api.dicebear.com/7.x/avataaars/svg?seed=${m.uid}`;
+                currentMenuAvatar = getDefaultAvatarUrl(m.uid);
                 document.getElementById('menu-avatar').src = currentMenuAvatar;
                 document.getElementById('menu-username').textContent = m.name;
             });
@@ -953,7 +965,7 @@ import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebas
                     document.getElementById('profile-view-mode').style.display = 'block';
                     document.getElementById('profile-edit-mode').style.display = 'none';
                     
-                    currentViewAvatar = sanitizeURL(u.avatar) || `https://api.dicebear.com/7.x/avataaars/svg?seed=${sanitizeHTML(uid)}`;
+                    currentViewAvatar = sanitizeURL(u.avatar) || getDefaultAvatarUrl(sanitizeHTML(uid));
                     document.getElementById('view-avatar').src = currentViewAvatar;
                     document.getElementById('view-name').innerText = u.name;
                     document.getElementById('view-bio').innerText = u.bio || 'لا يوجد بايو';
@@ -979,7 +991,7 @@ import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebas
             document.getElementById('edit-name').value = me.name;
             document.getElementById('edit-bio').value = me.bio || '';
             document.getElementById('edit-avatar').value = me.avatar || '';
-            currentEditAvatar = me.avatar || `https://api.dicebear.com/7.x/avataaars/svg?seed=${me.user}`;
+            currentEditAvatar = me.avatar || getDefaultAvatarUrl(me.user);
             document.getElementById('edit-avatar-preview').src = currentEditAvatar;
         };
 
@@ -1043,7 +1055,7 @@ import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebas
             const name = document.getElementById('ai-name').value.trim() || 'NAZ Ai';
             const apiKey = document.getElementById('ai-api-key').value.trim();
             const model = document.getElementById('ai-model').value.trim() || 'meta-llama/llama-3-8b-instruct';
-            const avatar = document.getElementById('ai-avatar').value.trim() || 'https://api.dicebear.com/7.x/avataaars/svg?seed=NAZ';
+            const avatar = document.getElementById('ai-avatar').value.trim() || getDefaultAvatarUrl('NAZ');
             
             if (!apiKey) {
                 alert('يرجى وضع API Key');
@@ -1075,7 +1087,7 @@ import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebas
         document.getElementById('ai-avatar').addEventListener('input', (e) => {
              const url = e.target.value.trim();
              const img = document.getElementById('ai-avatar-preview');
-             if(url) { img.src = url; } else { img.src = 'https://api.dicebear.com/7.x/avataaars/svg?seed=NAZ'; }
+             if(url) { img.src = url; } else { img.src = getDefaultAvatarUrl('NAZ'); }
         });
 
         async function triggerAiResponse(messageKey, userMessage, userName) {
@@ -1139,7 +1151,7 @@ import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebas
                         name: dbAiConfig.name || 'NAZ Ai',
                         txt: aiText,
                         time: serverTimestamp(),
-                        avatar: dbAiConfig.avatar || 'https://api.dicebear.com/7.x/avataaars/svg?seed=NAZ',
+                        avatar: dbAiConfig.avatar || getDefaultAvatarUrl('NAZ'),
                         isImage: false
                     });
                     console.log('✅ AI response sent successfully');
@@ -1190,7 +1202,7 @@ import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebas
                     if(user.isBanned) {
                         hasBanned = true;
                         // 🛡️ تنقية بيانات المستخدم المحظور
-                        const safeAvatar = sanitizeHTML(sanitizeURL(user.avatar) || `https://api.dicebear.com/7.x/avataaars/svg?seed=${sanitizeHTML(u.key)}`);
+                        const safeAvatar = sanitizeHTML(sanitizeURL(user.avatar) || getDefaultAvatarUrl(sanitizeHTML(u.key)));
                         const safeName = sanitizeHTML(user.name);
                         const safeKey = sanitizeHTML(u.key);
                         content.innerHTML += `
@@ -1256,11 +1268,11 @@ import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebas
                     item.className = 'member-item';
                     // 🛡️ تنقية بيانات الأعضاء
                     const safeKey = sanitizeHTML(u.key);
-                    const rawAvatarUrl = sanitizeURL(user.avatar) || `https://api.dicebear.com/7.x/avataaars/svg?seed=${safeKey}`;
+                    const rawAvatarUrl = sanitizeURL(user.avatar) || getDefaultAvatarUrl(safeKey);
                     const safeAvatarUrl = sanitizeHTML(rawAvatarUrl);
                     const safeMemberName = sanitizeHTML(user.name);
                     item.innerHTML = `
-                        <img src="${safeAvatarUrl}" class="member-avatar" alt="" onclick="openUserAvatarModal('${safeAvatarUrl}')" onerror="this.src='https://api.dicebear.com/7.x/avataaars/svg?seed=${safeKey}'">
+                        <img src="${safeAvatarUrl}" class="member-avatar" alt="" onclick="openUserAvatarModal('${safeAvatarUrl}')" onerror="this.src='${getDefaultAvatarUrl(safeKey)}'">
                         <div class="member-info">
                             <div class="member-name">${safeMemberName} ${u.key === 'reza' ? '👑' : ''}</div>
                             <div class="${user.isOnline ? 'member-status' : 'member-owner'}">${user.isOnline ? 'متصل' : 'غير متصل'}</div>
