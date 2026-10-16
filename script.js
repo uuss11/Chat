@@ -106,6 +106,11 @@ import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebas
         let me = null, activeMsg = null, isEdit = false, replyData = null, forwardData = null;
         let dbAiConfig = null;
         const processedAiMsgs = new Set();
+        let openRouterModelsCache = null;
+        let openRouterModelsCachedAt = 0;
+        let openRouterModelsPromise = null;
+        let aiModelSearchTimer = null;
+        let aiModelSearchSequence = 0;
         let isInitialLoad = true;
         let currentTheme = 'calm';
         let onlineUsers = new Set();
@@ -244,6 +249,76 @@ import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebas
 
         // === دوال مساعدة بريميوم ===
         const REACTION_EMOJIS = ['❤️', '👍', '😂', '😢', '😮', '🔥'];
+
+        const NAZ_MOODS = {
+            warm: { label: 'ودودة وحنونة', fallback: ['❤️', '👍'] },
+            playful: { label: 'مرحة', fallback: ['😂', '❤️', '😮'] },
+            excited: { label: 'متحمسة', fallback: ['🔥', '👍', '😮'] },
+            calm: { label: 'هادئة', fallback: ['👍', '❤️'] }
+        };
+
+        function getNazMood() {
+            const configured = dbAiConfig?.mood || 'auto';
+            if (configured !== 'auto' && NAZ_MOODS[configured]) {
+                return { key: configured, ...NAZ_MOODS[configured] };
+            }
+            const moods = Object.keys(NAZ_MOODS);
+            const cycle = Math.floor(Date.now() / (5 * 60 * 1000));
+            const key = moods[cycle % moods.length];
+            return { key, ...NAZ_MOODS[key] };
+        }
+
+        function stableHash(value) {
+            let hash = 2166136261;
+            for (let i = 0; i < value.length; i++) hash = Math.imul(hash ^ value.charCodeAt(i), 16777619);
+            return hash >>> 0;
+        }
+
+        function chooseNazReaction(messageKey, message, forced = false) {
+            const mood = getNazMood();
+            const text = typeof message?.txt === 'string' ? message.txt : '';
+            if (!forced && stableHash(`${messageKey}|${mood.key}|chance`) % 100 >= 30) return null;
+
+            let choices = mood.fallback;
+            if (message?.isImage) choices = ['😮', '❤️', '🔥'];
+            else if (/(?:^|[^\p{L}])(?:هههه+|لول|نكتة|نكت|😂|🤣|lol)(?:$|[^\p{L}])/iu.test(text)) choices = ['😂', '❤️'];
+            else if (/(?:^|[^\p{L}])(?:حزين|زعلان|متضايق|تعبان|مضايقني|😢)(?:$|[^\p{L}])/iu.test(text)) choices = mood.key === 'playful' ? ['❤️', '😢'] : ['😢', '❤️'];
+            else if (/(?:^|[^\p{L}])(?:شكرا|شكراً|مشكور|ممنون|تسلم|thanks|thank you)(?:$|[^\p{L}])/iu.test(text)) choices = ['❤️', '👍'];
+            else if (/(?:^|[^\p{L}])(?:مبروك|نجحت|فزت|ترقية|إنجاز|انجاز|🥳|🔥)(?:$|[^\p{L}])/iu.test(text)) choices = ['🔥', '👍', '❤️'];
+            else if (/[?؟]|(?:^|[^\p{L}])(?:شلون|كيف|ليش|متى|وين|شنو|هل)(?:$|[^\p{L}])/iu.test(text)) choices = ['😮', '👍'];
+            else if (/(?:^|[^\p{L}])(?:هلا|مرحبا|السلام|سلام|صباح الخير|مساء الخير)(?:$|[^\p{L}])/iu.test(text)) choices = ['❤️', '👍', '😮'];
+
+            const emoji = choices[stableHash(`${messageKey}|${mood.key}|reaction`) % choices.length];
+            return { emoji, mood };
+        }
+
+        async function reactAsNaz(messageKey, message, forced = false) {
+            if (!message || message.uid === 'naz_ai' || message.forwarded) return false;
+            const chosen = chooseNazReaction(messageKey, message, forced);
+            if (!chosen) return false;
+
+            const now = Date.now();
+            const aiName = String(dbAiConfig.name || 'NAZ Ai').slice(0, 50);
+            try {
+                const claim = await runTransaction(ref(db, `messages/${messageKey}`), current => {
+                    if (!current || current.nazReaction) return;
+                    const reactions = current.reactions && typeof current.reactions === 'object' ? current.reactions : {};
+                    const emojiUsers = reactions[chosen.emoji] && typeof reactions[chosen.emoji] === 'object' ? reactions[chosen.emoji] : {};
+                    return {
+                        ...current,
+                        nazReaction: { emoji: chosen.emoji, mood: chosen.mood.key, at: now },
+                        reactions: {
+                            ...reactions,
+                            [chosen.emoji]: { ...emojiUsers, naz_ai: { name: aiName, time: now } }
+                        }
+                    };
+                }, { applyLocally: false });
+                return claim.committed;
+            } catch (error) {
+                console.warn('NAZ quick reaction could not be saved:', error);
+                return false;
+            }
+        }
 
         function processMessageText(txt) {
             if (!txt) return '';
@@ -641,23 +716,19 @@ import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebas
                     `;
                     flow.appendChild(div);
 
-                    // يرد ناز على منشنه أو الرد عليه من أي مستخدم؛ المعاملة الذرية تمنع تكرار الرد بين الأجهزة.
-                    if (!isInitialLoad && dbAiConfig && dbAiConfig.apiKey) {
-                        if (!processedAiMsgs.has(child.key) && m.uid !== 'naz_ai') {
-                            processedAiMsgs.add(child.key);
-                            
-                            // التحقق أن الرسالة جديدة (بعد وقت دخول المالك) لتجنب الرد على رسائل قديمة 
-                            // تظهر بسبب إزاحة النافذة عند حذف رسائل أخرى
-                            const isNewMessage = m.time >= joinTime;
-                            
-                            if (isNewMessage && !m.aiResponded) {
-                                const messageText = typeof m.txt === 'string' ? m.txt : '';
-                                const isMention = (!m.forwarded && (/(?:^|[^\p{L}\p{N}_])@(?:naz|ناز)(?=$|[^\p{L}\p{N}_])/iu.test(messageText) || /(?:^|[^\p{L}\p{N}_])ناز(?:$|[^\p{L}\p{N}_])/iu.test(messageText)));
-                                const isReplyToNaz = (!m.forwarded && m.reply && (m.reply.name === (dbAiConfig.name || 'NAZ Ai') || m.reply.name === 'NAZ Ai'));
-                                
-                                if (isMention || isReplyToNaz) {
-                                    triggerAiResponse(child.key, m.txt, m.name);
-                                }
+                    // تفاعلات خفيفة بلا استدعاء نموذج لكل رسالة؛ المنشن والرد على ناز يفرضان ريأكشن ورداً نصياً.
+                    if (!isInitialLoad && !processedAiMsgs.has(child.key) && m.uid !== 'naz_ai') {
+                        processedAiMsgs.add(child.key);
+                        const isNewMessage = m.time >= joinTime;
+                        if (isNewMessage) {
+                            const messageText = typeof m.txt === 'string' ? m.txt : '';
+                            const isMention = (!m.forwarded && (/(?:^|[^\p{L}\p{N}_])@(?:naz|ناز)(?=$|[^\p{L}\p{N}_])/iu.test(messageText) || /(?:^|[^\p{L}\p{N}_])ناز(?:$|[^\p{L}\p{N}_])/iu.test(messageText)));
+                            const isReplyToNaz = (!m.forwarded && m.reply && (m.reply.name === (dbAiConfig?.name || 'NAZ Ai') || m.reply.name === 'NAZ Ai'));
+                            const shouldReply = Boolean(isMention || isReplyToNaz);
+
+                            void reactAsNaz(child.key, m, shouldReply);
+                            if (shouldReply && dbAiConfig?.apiKey && !m.aiResponded) {
+                                void triggerAiResponse(child.key, m.txt, m.name);
                             }
                         }
                     }
@@ -1087,6 +1158,7 @@ import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebas
                         document.getElementById('ai-name').value = dbAiConfig.name || '';
                         document.getElementById('ai-api-key').value = dbAiConfig.apiKey || '';
                         document.getElementById('ai-model').value = dbAiConfig.model || '';
+                        document.getElementById('ai-mood').value = dbAiConfig.mood || 'auto';
                         document.getElementById('ai-avatar').value = dbAiConfig.avatar || '';
                         if (dbAiConfig.avatar) {
                             document.getElementById('ai-avatar-preview').src = dbAiConfig.avatar;
@@ -1105,12 +1177,124 @@ import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebas
 
         window.openAiConfig = () => {
             document.getElementById('modal-ai').style.display = 'flex';
+            document.getElementById('ai-model-search').focus();
+        };
+
+        async function getOpenRouterModelCatalog(forceRefresh = false) {
+            const cacheFresh = openRouterModelsCache && Date.now() - openRouterModelsCachedAt < 60 * 60 * 1000;
+            if (!forceRefresh && cacheFresh) return openRouterModelsCache;
+            if (openRouterModelsPromise) return openRouterModelsPromise;
+
+            openRouterModelsPromise = (async () => {
+                const controller = new AbortController();
+                const timeout = setTimeout(() => controller.abort(), 15000);
+                try {
+                    const response = await fetch('https://openrouter.ai/api/v1/models?limit=1000', {
+                        headers: { Accept: 'application/json' },
+                        signal: controller.signal
+                    });
+                    if (!response.ok) throw new Error(`OpenRouter returned ${response.status}`);
+                    const payload = await response.json();
+                    if (!Array.isArray(payload.data)) throw new Error('OpenRouter model list was not an array');
+                    openRouterModelsCache = payload.data.filter(model => model && typeof model.id === 'string' && typeof model.name === 'string');
+                    openRouterModelsCachedAt = Date.now();
+                    return openRouterModelsCache;
+                } finally {
+                    clearTimeout(timeout);
+                    openRouterModelsPromise = null;
+                }
+            })();
+            return openRouterModelsPromise;
+        }
+
+        function formatModelPrice(price) {
+            const perToken = Number(price);
+            if (!Number.isFinite(perToken)) return 'غير معلن';
+            if (perToken === 0) return 'مجاني';
+            const perMillion = perToken * 1000000;
+            return perMillion < 0.01 ? `< $${perMillion.toFixed(4)}` : `$${perMillion.toFixed(2)}`;
+        }
+
+        function renderOpenRouterModelResults(models, query) {
+            const results = document.getElementById('ai-model-results');
+            const status = document.getElementById('ai-model-status');
+            const normalizedQuery = query.trim().toLowerCase();
+            const matches = (normalizedQuery
+                ? models.filter(model => `${model.name} ${model.id}`.toLowerCase().includes(normalizedQuery))
+                : models
+            ).slice(0, 10);
+            results.replaceChildren();
+
+            if (!matches.length) {
+                status.textContent = 'ما لقينا نموذج مطابق. جرّب اسم الشركة أو جزءاً من المعرّف.';
+                return;
+            }
+
+            status.textContent = normalizedQuery ? `نماذج مطابقة: ${matches.length}${matches.length === 10 ? ' (أول 10)' : ''}` : 'نماذج مقترحة من الكتالوج:';
+            for (const model of matches) {
+                const option = document.createElement('button');
+                option.type = 'button';
+                option.className = 'ai-model-option';
+                option.setAttribute('role', 'option');
+                option.setAttribute('aria-selected', String(document.getElementById('ai-model').value === model.id));
+
+                const title = document.createElement('span');
+                title.className = 'ai-model-option-title';
+                title.textContent = model.name;
+                const id = document.createElement('span');
+                id.className = 'ai-model-option-id';
+                id.textContent = model.id;
+                const meta = document.createElement('span');
+                meta.className = 'ai-model-option-meta';
+                const context = Number(model.context_length);
+                const contextText = Number.isFinite(context) ? `سياق ${context.toLocaleString('en-US')}` : 'السياق غير معلن';
+                meta.textContent = `دخول ${formatModelPrice(model.pricing?.prompt)} / مليون · خروج ${formatModelPrice(model.pricing?.completion)} / مليون · ${contextText}`;
+                option.append(title, id, meta);
+                option.addEventListener('click', () => window.selectAiModel(model.id, model.name));
+                results.appendChild(option);
+            }
+        }
+
+        window.searchOpenRouterModels = async (forceRefresh = false) => {
+            const queryText = document.getElementById('ai-model-search').value.trim();
+            const status = document.getElementById('ai-model-status');
+            const results = document.getElementById('ai-model-results');
+            const requestSequence = ++aiModelSearchSequence;
+            if (queryText.length < 2 && !forceRefresh) {
+                results.replaceChildren();
+                status.textContent = 'اكتب حرفين أو أكثر للبحث في النماذج.';
+                return;
+            }
+            status.textContent = 'جاري تحميل نماذج OpenRouter…';
+            try {
+                const models = await getOpenRouterModelCatalog(forceRefresh);
+                if (requestSequence !== aiModelSearchSequence) return;
+                renderOpenRouterModelResults(models, queryText);
+            } catch (error) {
+                if (requestSequence !== aiModelSearchSequence) return;
+                console.warn('OpenRouter model catalog unavailable:', error);
+                results.replaceChildren();
+                status.textContent = 'تعذّر تحميل النماذج. افحص الاتصال أو حدّث القائمة وحاول مرة أخرى.';
+            }
+        };
+
+        window.queueAiModelSearch = () => {
+            clearTimeout(aiModelSearchTimer);
+            aiModelSearchTimer = setTimeout(() => window.searchOpenRouterModels(false), 280);
+        };
+
+        window.selectAiModel = (modelId, modelName) => {
+            document.getElementById('ai-model').value = modelId;
+            document.getElementById('ai-model-search').value = modelName;
+            document.getElementById('ai-model-status').textContent = `تم اختيار: ${modelName} (${modelId})`;
+            document.getElementById('ai-model-results').replaceChildren();
         };
 
         window.saveAiConfig = async () => {
             const name = document.getElementById('ai-name').value.trim() || 'NAZ Ai';
             const apiKey = document.getElementById('ai-api-key').value.trim();
             const model = document.getElementById('ai-model').value.trim() || 'meta-llama/llama-3-8b-instruct';
+            const mood = document.getElementById('ai-mood').value || 'auto';
             const avatar = document.getElementById('ai-avatar').value.trim() || getDefaultAvatarUrl('NAZ');
             
             if (!apiKey) {
@@ -1129,6 +1313,7 @@ import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebas
                     name, 
                     apiKey, 
                     model, 
+                    mood,
                     avatar,
                     _authToken: token
                 });
@@ -1170,6 +1355,7 @@ import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebas
 
             const safeUserMessage = String(userMessage || '').slice(0, 1500);
             const safeUserName = String(userName || 'صديق').slice(0, 60);
+            const currentMood = getNazMood();
             
             showNotification('NAZ Ai يكتب الآن... 🤖');
             console.log(`🤖 AI triggered by ${safeUserName}: "${safeUserMessage}"`);
@@ -1181,6 +1367,7 @@ import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebas
 ملاحظات هامة: 
 - لا تقومي بتعريف نفسك أو ذكر تفاصيلك (مثل اسمك، عمرك، مدينتك، أو مالكك) إلا إذا سألك المستخدم عنها صراحة.
 - ردي بشكل مباشر وطبيعي، وبدون ذكر اسمك في البداية بشكل آلي.
+- مزاجك الحالي هو ${currentMood.label}؛ خلي نبرة ردك متأثرة به بشكل طبيعي، من دون مبالغة.
 
 اسم المستخدم الذي يكلمك هو: ${safeUserName}
 رسالة المستخدم هي: "${safeUserMessage}"`;
@@ -1209,7 +1396,8 @@ import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebas
                         txt: aiText,
                         time: serverTimestamp(),
                         avatar: dbAiConfig.avatar || getDefaultAvatarUrl('NAZ'),
-                        isImage: false
+                        isImage: false,
+                        reply: { name: safeUserName, txt: safeUserMessage.slice(0, 120) }
                     });
                     console.log('✅ AI response sent successfully');
                 } else {
