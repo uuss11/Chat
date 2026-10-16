@@ -661,6 +661,13 @@ import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebas
                         }
                     }
                 });
+
+                if (msgCount === 0) {
+                    const emptyState = document.createElement('div');
+                    emptyState.className = 'chat-empty-state';
+                    emptyState.innerHTML = '<div class="empty-orbit"><i class="fas fa-comments"></i></div><h2>هنا تبدأ الحكاية</h2><p>أرسل أول رسالة وخلي المحادثة تدبّ بيها الحياة.</p><span class="empty-sparkle">✦</span>';
+                    flow.appendChild(emptyState);
+                }
                 
                 if (isInitialLoad) {
                     snap.forEach(child => processedAiMsgs.add(child.key));
@@ -1336,6 +1343,37 @@ import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebas
         window.toggleMembers = () => {
             document.getElementById('members-sidebar').classList.toggle('open');
         };
+
+        window.toggleMoreMenu = () => {
+            const menu = document.getElementById('more-menu');
+            const trigger = document.getElementById('more-menu-trigger');
+            const isOpen = !menu.classList.contains('open');
+            menu.classList.toggle('open', isOpen);
+            menu.inert = !isOpen;
+            menu.setAttribute('aria-hidden', String(!isOpen));
+            trigger.setAttribute('aria-expanded', String(isOpen));
+            if (isOpen) menu.querySelector('.more-menu-item:not(.admin-only)')?.focus();
+        };
+
+        window.closeMoreMenu = () => {
+            const menu = document.getElementById('more-menu');
+            menu?.classList.remove('open');
+            if (menu) {
+                menu.inert = true;
+                menu.setAttribute('aria-hidden', 'true');
+            }
+            document.getElementById('more-menu-trigger')?.setAttribute('aria-expanded', 'false');
+        };
+
+        document.addEventListener('click', event => {
+            if (!event.target.closest('#more-menu') && !event.target.closest('#more-menu-trigger')) closeMoreMenu();
+        });
+        document.addEventListener('keydown', event => {
+            if (event.key === 'Escape' && document.getElementById('more-menu')?.classList.contains('open')) {
+                closeMoreMenu();
+                document.getElementById('more-menu-trigger')?.focus();
+            }
+        });
 
         window.toggleSearch = () => {
             const bar = document.getElementById('search-bar');
