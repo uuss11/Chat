@@ -41,10 +41,13 @@ import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebas
         function sanitizeURL(url) {
             if (!url) return '';
             const trimmed = String(url).trim();
-            if (/^javascript:/i.test(trimmed) || /^data:text\/html/i.test(trimmed) || /^vbscript:/i.test(trimmed)) {
+            try {
+                const parsed = new URL(trimmed);
+                if (!['http:', 'https:'].includes(parsed.protocol) || parsed.username || parsed.password) return '';
+                return parsed.href;
+            } catch {
                 return '';
             }
-            return trimmed;
         }
 
         // 🎲 توليد رابط أفاتار عشوائي (ذكر أو أنثى)
@@ -104,7 +107,7 @@ import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebas
         let dbAiConfig = null;
         const processedAiMsgs = new Set();
         let isInitialLoad = true;
-        let currentTheme = 'ocean';
+        let currentTheme = 'calm';
         let onlineUsers = new Set();
         let pinnedMessageId = null;
         let joinTime = Date.now();
@@ -118,7 +121,7 @@ import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebas
         function showError(message) {
             const errorBox = document.getElementById('error-box');
             const errorText = document.getElementById('error-text');
-            errorText.innerHTML = message;
+            errorText.textContent = String(message || 'حدث خطأ غير متوقع');
             errorBox.classList.add('show');
             setTimeout(() => errorBox.classList.remove('show'), 8000);
         }
@@ -171,8 +174,14 @@ import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebas
         const avatarPreview = document.getElementById('avatar-preview');
         const avatarPlaceholder = document.getElementById('avatar-placeholder');
 
+        document.querySelectorAll('.theme-option').forEach(option => {
+            option.setAttribute('role', 'button');
+            option.tabIndex = 0;
+            option.setAttribute('aria-label', `اختيار ثيم ${option.dataset.name || option.dataset.theme}`);
+        });
+
         avatarInput.addEventListener('input', (e) => {
-            const url = e.target.value.trim();
+            const url = sanitizeURL(e.target.value.trim());
             if (url) {
                 avatarPreview.src = url;
                 avatarPreview.style.display = 'block';
@@ -193,20 +202,38 @@ import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebas
                 option.classList.add('active');
                 currentTheme = option.dataset.theme;
                 document.body.setAttribute('data-theme', currentTheme);
+                try { localStorage.setItem('chat-theme', currentTheme); } catch {}
+            });
+            option.addEventListener('keydown', event => {
+                if (event.key === 'Enter' || event.key === ' ') {
+                    event.preventDefault();
+                    option.click();
+                }
             });
         });
 
+        try {
+            const savedTheme = localStorage.getItem('chat-theme');
+            const allowedThemes = ['calm', 'light', 'ocean', 'purple', 'sunset', 'emerald', 'rose', 'gold', 'midnight', 'cherry', 'arctic', 'lavender', 'neon', 'coffee'];
+            if (allowedThemes.includes(savedTheme)) {
+                currentTheme = savedTheme;
+                document.body.setAttribute('data-theme', savedTheme);
+                document.querySelectorAll('.theme-option').forEach(o => o.classList.toggle('active', o.dataset.theme === savedTheme));
+            }
+        } catch {}
+
         window.toggleTheme = () => {
-            const themes = ['ocean', 'purple', 'sunset', 'emerald', 'rose', 'gold', 'midnight', 'cherry', 'arctic', 'lavender', 'neon', 'coffee'];
+            const themes = ['calm', 'light', 'ocean', 'purple', 'sunset', 'emerald', 'rose', 'gold', 'midnight', 'cherry', 'arctic', 'lavender', 'neon', 'coffee'];
             const currentIndex = themes.indexOf(currentTheme);
             const nextIndex = (currentIndex + 1) % themes.length;
             currentTheme = themes[nextIndex];
             document.body.setAttribute('data-theme', currentTheme);
+            try { localStorage.setItem('chat-theme', currentTheme); } catch {}
             document.querySelectorAll('.theme-option').forEach(o => o.classList.toggle('active', o.dataset.theme === currentTheme));
             showNotification(`تم تغيير الثيم إلى ${getThemeName(currentTheme)}`);
         };
 
-        const getThemeName = (theme) => ({ ocean: '🌊 أوشن', purple: '👑 بنفسجي', sunset: '🌅 غروب', emerald: '💎 زمرد', rose: '🌹 وردي', gold: '✨ ذهبي', midnight: '🌙 منتصف الليل', cherry: '🍒 كرزي', arctic: '❄️ جليدي', lavender: '💜 لافندر', neon: '💚 نيون', coffee: '☕ قهوة' }[theme]);
+        const getThemeName = (theme) => ({ calm: 'هادئ', light: 'فاتح', ocean: 'أوشن', purple: 'بنفسجي', sunset: 'غروب', emerald: 'زمرد', rose: 'وردي', gold: 'ذهبي', midnight: 'منتصف الليل', cherry: 'كرزي', arctic: 'جليدي', lavender: 'لافندر', neon: 'نيون', coffee: 'قهوة' }[theme]);
 
         function showNotification(text) {
             const notif = document.getElementById('notification');
@@ -269,6 +296,15 @@ import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebas
             const name = document.getElementById('user-display').value.trim() || uid;
             const avatar = document.getElementById('user-avatar').value.trim();
             const loginBtn = document.getElementById('login-btn');
+
+            if (!/^[a-z0-9_-]{1,32}$/.test(uid)) {
+                showError('معرف المستخدم يقبل أحرفاً إنجليزية صغيرة وأرقاماً وشرطة فقط، وبحد أقصى 32 حرفاً.');
+                return;
+            }
+            if (name.length > 40) {
+                showError('الاسم المستعار يجب ألا يتجاوز 40 حرفاً.');
+                return;
+            }
             
             if (!uid) { 
                 showError('❌ الرجاء إدخال معرف المستخدم');
@@ -294,7 +330,7 @@ import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebas
 
             loadingTimeout = setTimeout(() => {
                 hideLoading();
-                showError('⏱️ انتهى وقت الانتظار! تحقق من:<br>1. اتصالك بالإنترنت<br>2. إعدادات Firebase<br>3. Firebase Rules');
+                showError('⏱️ انتهى وقت الانتظار! تحقق من اتصالك بالإنترنت وإعدادات Firebase وقواعد قاعدة البيانات.');
             }, 15000);
 
             try {
@@ -359,6 +395,11 @@ import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebas
                     });
                     showNotification('✅ تم تسجيل الدخول بنجاح!');
                 } else {
+                    if (pass.length < 10) {
+                        hideLoading();
+                        showError('كلمة المرور للحساب الجديد يجب أن تكون 10 أحرف على الأقل.');
+                        return;
+                    }
                     // إنشاء حساب جديد (كلمة المرور مهشّنة)
                     me = { 
                         user: uid, 
@@ -754,6 +795,10 @@ import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebas
         window.sendMessage = async () => {
             const txt = document.getElementById('msg-input').value.trim();
             if(!txt) return;
+            if (txt.length > 2000) {
+                showNotification('الرسالة طويلة جداً؛ الحد الأقصى 2000 حرف.');
+                return;
+            }
             
             try {
                 if(isEdit) {
@@ -782,10 +827,13 @@ import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebas
         };
 
         function isImageUrl(url) {
-            return url.match(/\.(jpeg|jpg|gif|png|webp|svg)(\?.*)?$/i) != null || 
-                   url.includes('catbox.moe') ||
-                   url.includes('imgur.com') ||
-                   url.includes('ibb.co');
+            const safeUrl = sanitizeURL(url);
+            if (!safeUrl) return false;
+            try {
+                const parsed = new URL(safeUrl);
+                return /\.(jpeg|jpg|gif|png|webp)(\?.*)?$/i.test(parsed.pathname + parsed.search) ||
+                    ['catbox.moe', 'imgur.com', 'ibb.co'].some(domain => parsed.hostname === domain || parsed.hostname.endsWith('.' + domain));
+            } catch { return false; }
         }
 
         window.sendImage = () => {
@@ -1350,7 +1398,12 @@ import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebas
         window.closeStatsModal = (e) => { if (e.target === document.getElementById('modal-stats')) document.getElementById('modal-stats').style.display = 'none'; };
         window.closeForwardModal = (e) => { if (e.target === document.getElementById('modal-forward')) document.getElementById('modal-forward').style.display = 'none'; };
 
-        document.getElementById('msg-input').addEventListener('keypress', (e) => { if (e.key === 'Enter') sendMessage(); });
+        document.getElementById('msg-input').addEventListener('keydown', (e) => {
+            if (e.key === 'Enter' && !e.isComposing) {
+                e.preventDefault();
+                sendMessage();
+            }
+        });
 
         // === نظام مؤشر الكتابة ===
         let typingTimeout;
@@ -1379,7 +1432,11 @@ import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebas
                 if (typingUsers.length > 0) {
                     indicator.style.display = 'flex';
                     const nameText = typingUsers.length === 1 ? typingUsers[0] : typingUsers.slice(0, 2).join(' و ');
-                    indicator.querySelector('span').innerHTML = `<span class="typing-name">${nameText}</span> ${typingUsers.length === 1 ? 'يكتب' : 'يكتبون'}`;
+                    const status = indicator.querySelector('span');
+                    const safeName = document.createElement('span');
+                    safeName.className = 'typing-name';
+                    safeName.textContent = nameText;
+                    status.replaceChildren(safeName, document.createTextNode(typingUsers.length === 1 ? ' يكتب' : ' يكتبون'));
                 } else {
                     indicator.style.display = 'none';
                 }
