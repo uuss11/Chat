@@ -137,9 +137,16 @@
                 <button class="header-btn" onclick="toggleTheme()" title="تغيير الثيم">
                     <i class="fas fa-palette"></i>
                 </button>
-                <button class="header-btn" onclick="openMyProfile()" title="ملفي الشخصي">
-                    <i class="fas fa-user-cog"></i>
+                <button class="header-btn more-menu-trigger" id="more-menu-trigger" onclick="toggleMoreMenu()" title="المزيد" aria-label="المزيد من الخيارات" aria-haspopup="menu" aria-expanded="false" aria-controls="more-menu">
+                    <i class="fas fa-ellipsis"></i>
                 </button>
+            </div>
+            <div class="more-menu" id="more-menu" role="menu" aria-label="خيارات الحساب" aria-hidden="true" inert>
+                <button class="more-menu-item" role="menuitem" onclick="openMyProfile(); closeMoreMenu()"><i class="fas fa-user-circle"></i><span>ملفي الشخصي</span></button>
+                <button class="more-menu-item" role="menuitem" onclick="showStats(); closeMoreMenu()"><i class="fas fa-chart-bar"></i><span>إحصائيات الدردشة</span></button>
+                <button class="more-menu-item" role="menuitem" onclick="showBannedList(); closeMoreMenu()"><i class="fas fa-user-slash"></i><span>قائمة المحظورين</span></button>
+                <button class="more-menu-item admin-only" role="menuitem" style="display:none" onclick="openAiConfig(); closeMoreMenu()"><i class="fas fa-robot"></i><span>إعدادات الذكاء الاصطناعي</span></button>
+                <button class="more-menu-item logout-item" role="menuitem" onclick="logout()"><i class="fas fa-sign-out-alt"></i><span>تسجيل الخروج</span></button>
             </div>
         </div>
 
@@ -162,13 +169,6 @@
             <div class="members-sidebar" id="members-sidebar">
                 <div class="members-header"><i class="fas fa-users"></i> الأعضاء المتصلين</div>
                 <div class="members-list" id="members-list"></div>
-            </div>
-            <div class="side-bar">
-                <button class="side-btn" onclick="openMyProfile()" data-label="ملفي"><i class="fas fa-user-circle"></i></button>
-                <button class="side-btn" onclick="showStats()" data-label="إحصائيات"><i class="fas fa-chart-bar"></i></button>
-                <button class="side-btn" onclick="showBannedList()" data-label="المحظورين"><i class="fas fa-user-slash"></i></button>
-                <button class="side-btn admin-only" style="display:none" onclick="openAiConfig()" data-label="الذكاء"><i class="fas fa-robot"></i></button>
-                <button class="side-btn" onclick="logout()" data-label="خروج"><i class="fas fa-sign-out-alt"></i></button>
             </div>
         </div>
 
