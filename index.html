@@ -9,7 +9,7 @@
     <title>REZA | Ultra Chat Experience</title>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     <link href="https://fonts.googleapis.com/css2?family=Cairo:wght@300;400;500;600;700;800&family=Tajawal:wght@400;500;700&display=swap" rel="stylesheet">
-    <link rel="stylesheet" href="style.css?v=5">
+    <link rel="stylesheet" href="style.css?v=6">
 </head>
 <body data-theme="calm">
     <div class="bg-container"></div>
@@ -285,21 +285,30 @@
                 <i class="input-icon fas fa-robot"></i>
                 <input type="text" id="ai-name" class="glass-input" placeholder="اسم الذكاء (مثال: NAZ Ai)">
             </div>
-            <div class="input-group">
-                <i class="input-icon fas fa-key"></i>
-                <input type="password" id="ai-api-key" class="glass-input" placeholder="OpenRouter API Key">
-            </div>
+
+            <section class="ai-block" aria-labelledby="ai-keys-title">
+                <header class="ai-block-head">
+                    <span id="ai-keys-title" class="ai-field-label"><i class="fas fa-key"></i> مفاتيح OpenRouter <span id="ai-keys-count" class="ai-count">0</span></span>
+                    <button type="button" class="ai-mini-btn" onclick="addAiKeyRow()"><i class="fas fa-plus"></i> مفتاح</button>
+                </header>
+                <div id="ai-keys-list" class="ai-keys-list"></div>
+                <div class="ai-keys-summary" id="ai-keys-summary" aria-live="polite">لا توجد مفاتيح بعد.</div>
+                <small class="ai-model-note">عند نفاد مفتاح أو رفضه، ينتقل ناز تلقائياً للمفتاح التالي. الحالة تُعلَّم تلقائياً ويمكن إعادة تفعيلها.</small>
+            </section>
+
             <div class="ai-model-search-block">
-                <label class="ai-field-label" for="ai-model-search"><i class="fas fa-search"></i> ابحثي في نماذج OpenRouter</label>
+                <label class="ai-field-label" for="ai-model-search"><i class="fas fa-search"></i> ابحث في نماذج OpenRouter</label>
                 <div class="ai-model-search-row">
                     <input type="search" id="ai-model-search" class="glass-input" placeholder="مثال: Gemini أو Claude أو Llama" autocomplete="off" oninput="queueAiModelSearch()">
                     <button type="button" class="ai-model-refresh" onclick="searchOpenRouterModels(true)" title="تحديث قائمة النماذج" aria-label="تحديث قائمة النماذج"><i class="fas fa-rotate"></i></button>
                 </div>
                 <div id="ai-model-status" class="ai-model-status" aria-live="polite">اكتب اسم نموذج أو شركة للبحث.</div>
                 <div id="ai-model-results" class="ai-model-results" role="listbox" aria-label="نماذج OpenRouter المطابقة"></div>
-                <label class="ai-field-label" for="ai-model"><i class="fas fa-brain"></i> النموذج المختار (معرّف OpenRouter)</label>
+                <label class="ai-field-label" for="ai-model"><i class="fas fa-brain"></i> النموذج الأساسي</label>
                 <input type="text" id="ai-model" class="glass-input ai-model-id" placeholder="اختر من النتائج أو أدخل المعرّف يدوياً">
-                <small class="ai-model-note">كتالوج النماذج العام يعرض التكلفة والسياق؛ الاستخدام الفعلي يعتمد على الرسائل والنموذج المختار.</small>
+                <label class="ai-field-label"><i class="fas fa-layer-group"></i> سلسلة الاحتياط (يُجرَّب نموذج بعد آخر عند الفشل)</label>
+                <div id="ai-model-chain" class="ai-model-chain"></div>
+                <small class="ai-model-note">أضف نماذج احتياطية من نتائج البحث بزر «احتياطي». إذا ما رد النموذج الأساسي، ينتقل ناز تلقائياً للنموذج التالي ثم للمفتاح التالي.</small>
             </div>
             <div class="input-group ai-mood-group">
                 <i class="input-icon fas fa-face-smile"></i>
@@ -322,6 +331,6 @@
         </div>
     </div>
 
-    <script type="module" src="script.js?v=5"></script>
+    <script type="module" src="script.js?v=6"></script>
 </body>
 </html>

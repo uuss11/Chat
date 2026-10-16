@@ -1,6 +1,7 @@
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js";
         import { getAnalytics } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-analytics.js";
         import { getDatabase, ref, set, get, push, onValue, query, limitToLast, remove, update, runTransaction, serverTimestamp, onDisconnect } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-database.js";
+        import { TOOL_KINDS, renderToolCard, applyToolAction, parseToolResponse, isToolRequest, buildToolPrompt, mountToolTimers, clearToolTimers } from './naz-tools.js?v=6';
 
         // ============================================
         // 🔐 Security Utilities
@@ -106,6 +107,12 @@ import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebas
         let me = null, activeMsg = null, isEdit = false, replyData = null, forwardData = null;
         let dbAiConfig = null;
         const processedAiMsgs = new Set();
+        const KEY_STATUS_STORAGE = 'naz_key_status_v1';
+        const KEY_COOLDOWN_MS = 5 * 60 * 1000;
+        const KEY_SOFT_COOLDOWN_MS = 60 * 1000;
+        let aiKeyStatus = {};
+        let aiModelChain = [];
+        const toolRegistry = new Map();
         let openRouterModelsCache = null;
         let openRouterModelsCachedAt = 0;
         let openRouterModelsPromise = null;
@@ -688,7 +695,10 @@ import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebas
                     const pinnedBadge = m.isPinned ? '<span class="pinned-badge"><i class="fas fa-thumbtack"></i> مثبت</span>' : '';
                     
                     let content = '';
-                    if (m.isImage) {
+                    if (m.tool && TOOL_KINDS[m.tool.kind]) {
+                        toolRegistry.set(child.key, { tool: m.tool, state: m.toolState });
+                        content = `${m.txt ? `<div class="tool-caption">${sanitizeHTML(m.txt)}</div>` : ''}${renderToolCard(child.key, m.tool, m.toolState, { user: me.user, name: me.name })}`;
+                    } else if (m.isImage) {
                         const safeImgUrl = sanitizeURL(m.txt) || '';
                         const safeImgAttr = sanitizeHTML(safeImgUrl);
                         content = `<img src="${safeImgAttr}" class="bubble-image" onclick="openImageModal('${safeImgAttr}')" alt="صورة">`;
@@ -708,7 +718,7 @@ import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebas
                             </div>
                             ${m.uid === me.user ? `<img src="${safeAvatarAttr}" class="msg-avatar" alt="${safeName}" onclick="openUserAvatarModal('${safeAvatarAttr}')" onerror="this.src='${getDefaultAvatarUrl(safeUid)}'">` : ''}
                         </div>
-                        <div class="bubble ${isBanned ? 'banned-msg' : ''}" onclick="openMenu('${sanitizeHTML(child.key)}', ${safeM})">
+                        <div class="bubble ${isBanned ? 'banned-msg' : ''} ${m.tool ? 'tool-bubble' : ''}" onclick="openMenu('${sanitizeHTML(child.key)}', ${safeM})">
                             ${m.reply ? `<div class="reply-preview"><span class="reply-name">${sanitizeHTML(m.reply.name)}</span><div class="reply-text">${sanitizeHTML(m.reply.txt.substring(0, 50))}${m.reply.txt.length > 50 ? '...' : ''}</div></div>` : ''}
                             ${content}
                         </div>
@@ -748,6 +758,7 @@ import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebas
                 
                 document.getElementById('stats-total-messages').textContent = msgCount;
                 document.getElementById('stats-total-images').textContent = imgCount;
+                mountToolTimers(flow);
                 flow.scrollTop = flow.scrollHeight;
             }, (error) => {
                 console.error('Messages listener error:', error);
@@ -1147,6 +1158,257 @@ import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebas
             }
         };
 
+        // --- مجموعة مفاتيح OpenRouter + سلسلة النماذج ---
+        function hashKeyValue(key) {
+            let hash = 2166136261;
+            const str = String(key || '');
+            for (let i = 0; i < str.length; i++) hash = Math.imul(hash ^ str.charCodeAt(i), 16777619);
+            return (hash >>> 0).toString(36);
+        }
+
+        function loadStoredKeyStatus() {
+            try {
+                const raw = localStorage.getItem(KEY_STATUS_STORAGE);
+                aiKeyStatus = raw ? JSON.parse(raw) || {} : {};
+            } catch { aiKeyStatus = {}; }
+        }
+
+        function persistKeyStatus() {
+            try { localStorage.setItem(KEY_STATUS_STORAGE, JSON.stringify(aiKeyStatus)); } catch { /* ignore */ }
+        }
+
+        function getKeyState(key) {
+            const record = aiKeyStatus[hashKeyValue(key)];
+            if (!record) return { state: 'ready' };
+            if ((record.state === 'cooldown' || record.state === 'soft') && record.until && Date.now() > record.until) {
+                delete aiKeyStatus[hashKeyValue(key)];
+                persistKeyStatus();
+                return { state: 'ready' };
+            }
+            return record;
+        }
+
+        function markKeyState(key, state, reason, cooldownMs = 0) {
+            if (!key) return;
+            aiKeyStatus[hashKeyValue(key)] = { state, reason: reason || '', at: Date.now(), until: cooldownMs ? Date.now() + cooldownMs : 0 };
+            persistKeyStatus();
+            updateAiKeysMeta();
+            void persistSharedKeyStatus();
+        }
+
+        function resetKeyState(key) {
+            if (!key) return;
+            delete aiKeyStatus[hashKeyValue(key)];
+            persistKeyStatus();
+            updateAiKeysMeta();
+            void persistSharedKeyStatus();
+        }
+
+        async function persistSharedKeyStatus() {
+            if (!me || me.user !== 'reza') return;
+            try {
+                const token = await ensureValidAdminToken();
+                if (!token) return;
+                await update(ref(db, 'ai_config'), { keyStatus: aiKeyStatus, _authToken: token });
+            } catch { /* local status is enough for non-owners */ }
+        }
+
+        function getRuntimeKeys() {
+            if (!dbAiConfig) return [];
+            const keys = [];
+            if (Array.isArray(dbAiConfig.apiKeys)) keys.push(...dbAiConfig.apiKeys);
+            if (dbAiConfig.apiKey) keys.push(dbAiConfig.apiKey);
+            return [...new Set(keys.map(key => String(key || '').trim()).filter(Boolean))];
+        }
+
+        function getAvailableKeys() {
+            return getRuntimeKeys().filter(key => getKeyState(key).state === 'ready');
+        }
+
+        function keyStatusSummary() {
+            const keys = getRuntimeKeys();
+            const summary = { total: keys.length, ready: 0, exhausted: 0, cooldown: 0 };
+            keys.forEach(key => {
+                const state = getKeyState(key).state;
+                if (state === 'ready') summary.ready++;
+                else if (state === 'exhausted') summary.exhausted++;
+                else summary.cooldown++;
+            });
+            return summary;
+        }
+
+        function getModelChain() {
+            const chain = [];
+            const add = id => {
+                const clean = String(id || '').trim();
+                if (clean && !chain.includes(clean)) chain.push(clean);
+            };
+            add(dbAiConfig?.model);
+            if (Array.isArray(dbAiConfig?.models)) dbAiConfig.models.forEach(add);
+            add('openrouter/auto');
+            return chain;
+        }
+
+        function addAiKeyRow(value = '') {
+            const list = document.getElementById('ai-keys-list');
+            if (!list) return;
+            const row = document.createElement('div');
+            row.className = 'ai-key-row';
+            row.innerHTML = `
+                <input type="password" class="glass-input ai-key-input" placeholder="sk-or-v1-..." autocomplete="off" spellcheck="false">
+                <span class="ai-key-status" data-state="empty">فارغ</span>
+                <button type="button" class="ai-key-action" data-key-reset title="إعادة تفعيل المفتاح" aria-label="إعادة تفعيل المفتاح"><i class="fas fa-rotate-right"></i></button>
+                <button type="button" class="ai-key-action ai-key-remove" title="حذف المفتاح" aria-label="حذف المفتاح"><i class="fas fa-trash"></i></button>`;
+            row.querySelector('.ai-key-input').value = value;
+            row.querySelector('.ai-key-input').addEventListener('input', updateAiKeysMeta);
+            row.querySelector('[data-key-reset]').addEventListener('click', () => resetKeyState(row.querySelector('.ai-key-input').value.trim()));
+            row.querySelector('.ai-key-remove').addEventListener('click', () => { row.remove(); updateAiKeysMeta(); });
+            list.appendChild(row);
+            updateAiKeysMeta();
+        }
+
+        function loadAiKeysIntoUi(keys) {
+            const list = document.getElementById('ai-keys-list');
+            if (!list) return;
+            list.replaceChildren();
+            (keys.length ? keys : ['']).forEach(key => addAiKeyRow(key));
+            updateAiKeysMeta();
+        }
+
+        function collectAiKeyDraft() {
+            return [...document.querySelectorAll('#ai-keys-list .ai-key-input')].map(input => input.value.trim()).filter(Boolean);
+        }
+
+        function updateAiKeysMeta() {
+            const values = collectAiKeyDraft();
+            const countLabel = document.getElementById('ai-keys-count');
+            if (countLabel) countLabel.textContent = String(values.length);
+            let ready = 0, exhausted = 0, waiting = 0;
+            document.querySelectorAll('#ai-keys-list .ai-key-row').forEach(row => {
+                const key = row.querySelector('.ai-key-input').value.trim();
+                const badge = row.querySelector('.ai-key-status');
+                if (!key) { badge.dataset.state = 'empty'; badge.textContent = 'فارغ'; return; }
+                const state = getKeyState(key).state;
+                if (state === 'ready') { badge.dataset.state = 'ready'; badge.textContent = 'جاهز'; ready++; }
+                else if (state === 'exhausted') { badge.dataset.state = 'exhausted'; badge.textContent = 'منتهي'; exhausted++; }
+                else { badge.dataset.state = 'cooldown'; badge.textContent = state === 'soft' ? 'تعذّر مؤقتاً' : 'انتظار'; waiting++; }
+            });
+            const summary = document.getElementById('ai-keys-summary');
+            if (summary) {
+                summary.textContent = !values.length
+                    ? 'لا توجد مفاتيح بعد. أضف مفتاحاً واحداً على الأقل.'
+                    : `المجموع: ${values.length} · جاهز: ${ready} · منتهي: ${exhausted}${waiting ? ` · مؤقت: ${waiting}` : ''}`;
+            }
+        }
+
+        function renderAiModelChain() {
+            const container = document.getElementById('ai-model-chain');
+            if (!container) return;
+            const chain = Array.isArray(aiModelChain) ? aiModelChain : [];
+            if (!chain.length) {
+                container.innerHTML = '<span class="ai-chain-empty">لا نماذج احتياطية بعد.</span>';
+                return;
+            }
+            container.replaceChildren();
+            chain.forEach((id, index) => {
+                const chip = document.createElement('span');
+                chip.className = 'ai-chain-chip';
+                const label = document.createElement('span');
+                label.textContent = id;
+                const remove = document.createElement('button');
+                remove.type = 'button';
+                remove.textContent = '×';
+                remove.setAttribute('aria-label', `حذف ${id}`);
+                remove.addEventListener('click', () => { aiModelChain.splice(index, 1); renderAiModelChain(); });
+                chip.append(label, remove);
+                container.appendChild(chip);
+            });
+        }
+
+        async function requestOpenRouterCompletion(key, model, messages, maxTokens, forceJson) {
+            const controller = new AbortController();
+            const timeout = setTimeout(() => controller.abort(), 30000);
+            try {
+                const response = await fetch('https://openrouter.ai/api/v1/chat/completions', {
+                    method: 'POST',
+                    headers: {
+                        'Authorization': `Bearer ${key}`,
+                        'HTTP-Referer': 'https://uuss11.github.io/Chat/',
+                        'X-Title': 'REZA CHAT',
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({
+                        model,
+                        messages,
+                        max_tokens: maxTokens,
+                        ...(forceJson ? { response_format: { type: 'json_object' } } : {})
+                    }),
+                    signal: controller.signal
+                });
+                const raw = await response.text();
+                let data = null;
+                try { data = JSON.parse(raw); } catch { data = null; }
+                const text = data?.choices?.[0]?.message?.content;
+                return {
+                    status: response.status,
+                    ok: response.ok,
+                    text: typeof text === 'string' ? text.trim() : '',
+                    error: typeof data?.error?.message === 'string' ? data.error.message : ''
+                };
+            } finally {
+                clearTimeout(timeout);
+            }
+        }
+
+        async function callOpenRouter(messages, options = {}) {
+            const maxTokens = options.maxTokens || 800;
+            if (!getRuntimeKeys().length) throw new Error('لا يوجد مفتاح OpenRouter محفوظ في الإعدادات');
+            const models = getModelChain();
+            const failures = [];
+            for (const model of models) {
+                const usableKeys = getAvailableKeys();
+                if (!usableKeys.length) break;
+                for (const key of usableKeys) {
+                    try {
+                        const result = await requestOpenRouterCompletion(key, model, messages, maxTokens, Boolean(options.json));
+                        if (result.ok && result.text) return { text: result.text, model };
+                        if (result.ok && !result.text) { failures.push(`${model}: رد فارغ`); break; }
+                        if (result.status === 401 || result.status === 403) {
+                            markKeyState(key, 'exhausted', `مفتاح مرفوض (${result.status})`);
+                            failures.push(`${model}: مفتاح مرفوض`);
+                            continue;
+                        }
+                        if (result.status === 402) {
+                            markKeyState(key, 'exhausted', 'رصيد المفتاح منتهي');
+                            failures.push(`${model}: رصيد منتهي`);
+                            continue;
+                        }
+                        if (result.status === 429) {
+                            markKeyState(key, 'cooldown', 'ضغط مؤقت على المفتاح', KEY_COOLDOWN_MS);
+                            failures.push(`${model}: ضغط مؤقت (429)`);
+                            continue;
+                        }
+                        failures.push(`${model}: ${result.status}${result.error ? ' ' + result.error : ''}`);
+                        break;
+                    } catch (error) {
+                        if (error.name === 'AbortError') {
+                            failures.push(`${model}: انتهت المهلة`);
+                            markKeyState(key, 'soft', 'مهلة الاتصال', KEY_SOFT_COOLDOWN_MS);
+                        } else {
+                            failures.push(`${model}: تعذّر الاتصال`);
+                            markKeyState(key, 'soft', 'خطأ شبكة', KEY_SOFT_COOLDOWN_MS);
+                        }
+                        continue;
+                    }
+                }
+            }
+            if (!failures.length) {
+                const summary = keyStatusSummary();
+                throw new Error(summary.total ? 'كل المفاتيح غير متاحة حالياً (منتهية أو في انتظار)' : 'لا يوجد مفتاح OpenRouter محفوظ في الإعدادات');
+            }
+            throw new Error(failures.slice(-4).join(' | '));
+        }
+
         // --- إعدادات الذكاء الاصطناعي ---
         function loadAiConfig() {
             onValue(ref(db, 'ai_config'), snap => {
@@ -1156,12 +1418,19 @@ import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebas
                     // ملء حقول الإعدادات للمالك فقط
                     if (me && me.user === 'reza') {
                         document.getElementById('ai-name').value = dbAiConfig.name || '';
-                        document.getElementById('ai-api-key').value = dbAiConfig.apiKey || '';
                         document.getElementById('ai-model').value = dbAiConfig.model || '';
                         document.getElementById('ai-mood').value = dbAiConfig.mood || 'auto';
                         document.getElementById('ai-avatar').value = dbAiConfig.avatar || '';
                         if (dbAiConfig.avatar) {
                             document.getElementById('ai-avatar-preview').src = dbAiConfig.avatar;
+                        }
+                        loadAiKeysIntoUi(getRuntimeKeys());
+                        aiModelChain = Array.isArray(dbAiConfig.models) ? dbAiConfig.models.slice(0, 12) : [];
+                        renderAiModelChain();
+                        if (dbAiConfig.keyStatus && typeof dbAiConfig.keyStatus === 'object') {
+                            aiKeyStatus = { ...aiKeyStatus, ...dbAiConfig.keyStatus };
+                            persistKeyStatus();
+                            updateAiKeysMeta();
                         }
                     }
                 } else {
@@ -1232,8 +1501,7 @@ import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebas
 
             status.textContent = normalizedQuery ? `نماذج مطابقة: ${matches.length}${matches.length === 10 ? ' (أول 10)' : ''}` : 'نماذج مقترحة من الكتالوج:';
             for (const model of matches) {
-                const option = document.createElement('button');
-                option.type = 'button';
+                const option = document.createElement('div');
                 option.className = 'ai-model-option';
                 option.setAttribute('role', 'option');
                 option.setAttribute('aria-selected', String(document.getElementById('ai-model').value === model.id));
@@ -1249,8 +1517,22 @@ import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebas
                 const context = Number(model.context_length);
                 const contextText = Number.isFinite(context) ? `سياق ${context.toLocaleString('en-US')}` : 'السياق غير معلن';
                 meta.textContent = `دخول ${formatModelPrice(model.pricing?.prompt)} / مليون · خروج ${formatModelPrice(model.pricing?.completion)} / مليون · ${contextText}`;
-                option.append(title, id, meta);
-                option.addEventListener('click', () => window.selectAiModel(model.id, model.name));
+
+                const actions = document.createElement('div');
+                actions.className = 'ai-model-option-actions';
+                const useButton = document.createElement('button');
+                useButton.type = 'button';
+                useButton.className = 'ai-model-use';
+                useButton.innerHTML = '<i class="fas fa-check"></i> أساسي';
+                useButton.addEventListener('click', () => window.selectAiModel(model.id, model.name));
+                const backupButton = document.createElement('button');
+                backupButton.type = 'button';
+                backupButton.className = 'ai-model-backup';
+                backupButton.innerHTML = '<i class="fas fa-plus"></i> احتياطي';
+                backupButton.addEventListener('click', () => window.addModelToChain(model.id, model.name));
+                actions.append(useButton, backupButton);
+
+                option.append(title, id, meta, actions);
                 results.appendChild(option);
             }
         }
@@ -1290,15 +1572,37 @@ import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebas
             document.getElementById('ai-model-results').replaceChildren();
         };
 
+        window.addModelToChain = (modelId, modelName) => {
+            const clean = String(modelId || '').trim();
+            if (!clean) return;
+            if (clean === document.getElementById('ai-model').value.trim()) {
+                document.getElementById('ai-model-status').textContent = 'هذا النموذج أساسي بالفعل.';
+                return;
+            }
+            if (aiModelChain.includes(clean)) {
+                document.getElementById('ai-model-status').textContent = 'النموذج مضاف مسبقاً في سلسلة الاحتياط.';
+                return;
+            }
+            if (aiModelChain.length >= 12) {
+                document.getElementById('ai-model-status').textContent = 'الحد الأقصى 12 نموذجاً في السلسلة.';
+                return;
+            }
+            aiModelChain.push(clean);
+            renderAiModelChain();
+            document.getElementById('ai-model-status').textContent = `أُضيف للاحتياط: ${modelName || clean}`;
+        };
+
+        window.addAiKeyRow = addAiKeyRow;
+
         window.saveAiConfig = async () => {
             const name = document.getElementById('ai-name').value.trim() || 'NAZ Ai';
-            const apiKey = document.getElementById('ai-api-key').value.trim();
+            const keys = collectAiKeyDraft();
             const model = document.getElementById('ai-model').value.trim() || 'meta-llama/llama-3-8b-instruct';
             const mood = document.getElementById('ai-mood').value || 'auto';
             const avatar = document.getElementById('ai-avatar').value.trim() || getDefaultAvatarUrl('NAZ');
             
-            if (!apiKey) {
-                alert('يرجى وضع API Key');
+            if (!keys.length) {
+                alert('أضف مفتاح OpenRouter واحداً على الأقل');
                 return;
             }
             // 🔐 تجديد الرمز تلقائياً إذا انتهت صلاحيته
@@ -1311,13 +1615,16 @@ import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebas
                 // 🔐 استخدام رمز إدارة ديناميكي مع TTL
                 await set(ref(db, 'ai_config'), { 
                     name, 
-                    apiKey, 
+                    apiKey: keys[0],
+                    apiKeys: keys,
                     model, 
+                    models: aiModelChain.slice(0, 12),
                     mood,
                     avatar,
+                    keyStatus: aiKeyStatus,
                     _authToken: token
                 });
-                showNotification('تم حفظ إعدادات الذكاء الاصطناعي بنجاح! 🤖');
+                showNotification(`تم الحفظ: ${keys.length} مفتاح · ${aiModelChain.length} نموذج احتياطي`);
                 document.getElementById('modal-ai').style.display = 'none';
             } catch (error) {
                 console.error("Firebase Details:", error);
@@ -1356,9 +1663,45 @@ import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebas
             const safeUserMessage = String(userMessage || '').slice(0, 1500);
             const safeUserName = String(userName || 'صديق').slice(0, 60);
             const currentMood = getNazMood();
+            const aiName = dbAiConfig.name || 'NAZ Ai';
+            const aiAvatar = dbAiConfig.avatar || getDefaultAvatarUrl('NAZ');
+            const keySummary = keyStatusSummary();
+
+            if (!keySummary.ready) {
+                showNotification(keySummary.total ? '⚠️ كل مفاتيح OpenRouter منتهية أو في انتظار' : '⚠️ لا يوجد مفتاح OpenRouter محفوظ');
+                return;
+            }
             
             showNotification('NAZ Ai يكتب الآن... 🤖');
             console.log(`🤖 AI triggered by ${safeUserName}: "${safeUserMessage}"`);
+
+            if (isToolRequest(safeUserMessage)) {
+                try {
+                    const toolCompletion = await callOpenRouter(
+                        [{ role: 'user', content: buildToolPrompt(safeUserMessage, safeUserName, currentMood.label) }],
+                        { maxTokens: 500, json: true }
+                    );
+                    const parsedTool = parseToolResponse(toolCompletion.text);
+                    if (parsedTool) {
+                        await push(ref(db, 'messages'), {
+                            uid: 'naz_ai',
+                            name: aiName,
+                            txt: parsedTool.caption,
+                            time: serverTimestamp(),
+                            avatar: aiAvatar,
+                            isImage: false,
+                            reply: { name: safeUserName, txt: safeUserMessage.slice(0, 120) },
+                            tool: parsedTool.tool,
+                            toolState: TOOL_KINDS[parsedTool.tool.kind].state(parsedTool.tool.config)
+                        });
+                        showNotification(`✅ جهّزت ناز ${parsedTool.tool.title}`);
+                        return;
+                    }
+                    console.warn('Tool response could not be parsed, falling back to a text reply');
+                } catch (toolError) {
+                    console.warn('Tool creation failed, falling back to a text reply:', toolError);
+                }
+            }
             
             const prompt = `أنتِ فتاة اسمك ${dbAiConfig.name || 'ناز'} (NAZ)، عمرك 18 سنة، وأنتِ من العراق وتحديداً من بغداد منطقة المنصور.
 مطورك ومبرمجك ومالكك هو شخص اسمه رضا (reza).
@@ -1373,40 +1716,22 @@ import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebas
 رسالة المستخدم هي: "${safeUserMessage}"`;
 
             try {
-                const response = await fetch('https://openrouter.ai/api/v1/chat/completions', {
-                    method: 'POST',
-                    headers: {
-                        'Authorization': `Bearer ${dbAiConfig.apiKey}`,
-                        'HTTP-Referer': 'https://uuss11.github.io/Chat/',
-                        'X-Title': 'REZA CHAT',
-                        'Content-Type': 'application/json'
-                    },
-                    body: JSON.stringify({
-                        model: dbAiConfig.model || 'meta-llama/llama-3-8b-instruct',
-                        messages: [{ role: 'user', content: prompt }]
-                    })
+                const completion = await callOpenRouter([{ role: 'user', content: prompt }], { maxTokens: 800 });
+                await push(ref(db, 'messages'), {
+                    uid: 'naz_ai',
+                    name: aiName,
+                    txt: completion.text,
+                    time: serverTimestamp(),
+                    avatar: aiAvatar,
+                    isImage: false,
+                    reply: { name: safeUserName, txt: safeUserMessage.slice(0, 120) }
                 });
-                const data = await response.json();
-                console.log('🤖 OpenRouter response:', data);
-                if (data.choices && data.choices.length > 0) {
-                    const aiText = data.choices[0].message.content.trim();
-                    await push(ref(db, 'messages'), {
-                        uid: 'naz_ai',
-                        name: dbAiConfig.name || 'NAZ Ai',
-                        txt: aiText,
-                        time: serverTimestamp(),
-                        avatar: dbAiConfig.avatar || getDefaultAvatarUrl('NAZ'),
-                        isImage: false,
-                        reply: { name: safeUserName, txt: safeUserMessage.slice(0, 120) }
-                    });
-                    console.log('✅ AI response sent successfully');
-                } else {
-                     console.error("OpenRouter Error", data);
-                     showNotification('❌ NAZ Ai فشل في الرد');
-                }
-            } catch (e) {
-                console.error("AI fetch error: ", e);
-                showNotification('❌ خطأ في الاتصال بـ NAZ Ai');
+                const usedModel = String(completion.model || '').split('/').pop();
+                showNotification(`✅ ردت ناز · ${usedModel}`);
+                console.log('✅ AI response sent successfully with model:', completion.model);
+            } catch (error) {
+                console.error('NAZ reply failed:', error);
+                showNotification(`❌ تعذّر رد ناز: ${String(error.message).slice(0, 80)}`);
             }
         }
 
@@ -1693,6 +2018,69 @@ import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebas
         }
 
         // === نظام الريأكشنات ===
+        // === أدوات ناز التفاعلية داخل الدردشة ===
+        function collectToolPayload(card, trigger) {
+            const payload = { fields: {} };
+            if (trigger.dataset.toolValue !== undefined) payload.value = trigger.dataset.toolValue;
+            card.querySelectorAll('[data-tool-input]').forEach(input => {
+                payload.fields[input.dataset.toolInput] = input.value;
+            });
+            const field = trigger.dataset.toolField;
+            if (field && payload.fields[field] !== undefined) payload.text = payload.fields[field];
+            return payload;
+        }
+
+        async function runToolAction(msgKey, action, payload) {
+            const entry = toolRegistry.get(msgKey);
+            if (!entry || !me) return;
+            try {
+                await runTransaction(ref(db, `messages/${msgKey}/toolState`), current => {
+                    const next = applyToolAction(
+                        entry.tool.kind,
+                        entry.tool.config || {},
+                        current || entry.state || {},
+                        action,
+                        payload,
+                        { user: me.user, name: me.name }
+                    );
+                    return next === null || next === undefined ? undefined : next;
+                }, { applyLocally: true });
+            } catch (error) {
+                console.error('Tool action failed:', error);
+                showNotification('❌ تعذّر تحديث الأداة');
+            }
+        }
+
+        document.getElementById('chat-flow').addEventListener('click', event => {
+            const trigger = event.target.closest('[data-tool-action]');
+            if (!trigger) return;
+            event.preventDefault();
+            event.stopPropagation();
+            const card = trigger.closest('[data-tool-card]');
+            if (!card || trigger.disabled) return;
+            void runToolAction(card.dataset.toolMsg, trigger.dataset.toolAction, collectToolPayload(card, trigger));
+        });
+
+        document.getElementById('chat-flow').addEventListener('keydown', event => {
+            if (event.key !== 'Enter') return;
+            const input = event.target.closest('[data-tool-input]');
+            if (!input) return;
+            const card = input.closest('[data-tool-card]');
+            const actionButton = card?.querySelector(`[data-tool-action][data-tool-field="${input.dataset.toolInput}"]`);
+            if (actionButton) {
+                event.preventDefault();
+                actionButton.click();
+            }
+        });
+
+        document.getElementById('chat-flow').addEventListener('change', event => {
+            const input = event.target.closest('textarea[data-tool-input]');
+            if (!input) return;
+            const card = input.closest('[data-tool-card]');
+            const actionButton = card?.querySelector(`[data-tool-action][data-tool-field="${input.dataset.toolInput}"]`);
+            if (actionButton) actionButton.click();
+        });
+
         window.toggleReaction = async (msgId, emoji) => {
             if (!me) return;
             const reactionPath = `messages/${msgId}/reactions/${emoji}/${me.user}`;
@@ -1743,6 +2131,7 @@ import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebas
 
         // تهيئة Firebase عند تحميل الصفحة والتحقق من الجلسة المحفوظة
         document.addEventListener('DOMContentLoaded', async () => {
+            loadStoredKeyStatus();
             initFirebase();
             // محاولة تسجيل الدخول التلقائي
             setTimeout(async () => {
