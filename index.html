@@ -289,9 +289,27 @@
                 <i class="input-icon fas fa-key"></i>
                 <input type="password" id="ai-api-key" class="glass-input" placeholder="OpenRouter API Key">
             </div>
-            <div class="input-group">
-                <i class="input-icon fas fa-brain"></i>
-                <input type="text" id="ai-model" class="glass-input" placeholder="النموذج (مثال: meta-llama/llama-3-8b-instruct)">
+            <div class="ai-model-search-block">
+                <label class="ai-field-label" for="ai-model-search"><i class="fas fa-search"></i> ابحثي في نماذج OpenRouter</label>
+                <div class="ai-model-search-row">
+                    <input type="search" id="ai-model-search" class="glass-input" placeholder="مثال: Gemini أو Claude أو Llama" autocomplete="off" oninput="queueAiModelSearch()">
+                    <button type="button" class="ai-model-refresh" onclick="searchOpenRouterModels(true)" title="تحديث قائمة النماذج" aria-label="تحديث قائمة النماذج"><i class="fas fa-rotate"></i></button>
+                </div>
+                <div id="ai-model-status" class="ai-model-status" aria-live="polite">اكتب اسم نموذج أو شركة للبحث.</div>
+                <div id="ai-model-results" class="ai-model-results" role="listbox" aria-label="نماذج OpenRouter المطابقة"></div>
+                <label class="ai-field-label" for="ai-model"><i class="fas fa-brain"></i> النموذج المختار (معرّف OpenRouter)</label>
+                <input type="text" id="ai-model" class="glass-input ai-model-id" placeholder="اختر من النتائج أو أدخل المعرّف يدوياً">
+                <small class="ai-model-note">كتالوج النماذج العام يعرض التكلفة والسياق؛ الاستخدام الفعلي يعتمد على الرسائل والنموذج المختار.</small>
+            </div>
+            <div class="input-group ai-mood-group">
+                <i class="input-icon fas fa-face-smile"></i>
+                <select id="ai-mood" class="glass-input" aria-label="مزاج ناز للتفاعلات">
+                    <option value="auto">مزاج تلقائي متغيّر</option>
+                    <option value="warm">ودودة وحنونة</option>
+                    <option value="playful">مرحة</option>
+                    <option value="excited">متحمسة</option>
+                    <option value="calm">هادئة</option>
+                </select>
             </div>
             <div class="input-group">
                 <i class="input-icon fas fa-image"></i>
