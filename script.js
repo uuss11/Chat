@@ -1,6 +1,6 @@
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js";
         import { getAnalytics } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-analytics.js";
-        import { getDatabase, ref, set, get, push, onValue, query, limitToLast, remove, update, serverTimestamp, onDisconnect } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-database.js";
+        import { getDatabase, ref, set, get, push, onValue, query, limitToLast, remove, update, runTransaction, serverTimestamp, onDisconnect } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-database.js";
 
         // ============================================
         // 🔐 Security Utilities
@@ -641,8 +641,8 @@ import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebas
                     `;
                     flow.appendChild(div);
 
-                    // AI Logic - 🔐 فقط جهاز المالك يقدر يرسل ردود AI
-                    if (!isInitialLoad && dbAiConfig && dbAiConfig.apiKey && me.user === 'reza') {
+                    // يرد ناز على منشنه أو الرد عليه من أي مستخدم؛ المعاملة الذرية تمنع تكرار الرد بين الأجهزة.
+                    if (!isInitialLoad && dbAiConfig && dbAiConfig.apiKey) {
                         if (!processedAiMsgs.has(child.key) && m.uid !== 'naz_ai') {
                             processedAiMsgs.add(child.key);
                             
@@ -651,7 +651,8 @@ import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebas
                             const isNewMessage = m.time >= joinTime;
                             
                             if (isNewMessage && !m.aiResponded) {
-                                const isMention = (m.txt && !m.forwarded && (m.txt.toLowerCase().includes('@naz') || m.txt.includes('ناز')));
+                                const messageText = typeof m.txt === 'string' ? m.txt : '';
+                                const isMention = (!m.forwarded && (/(?:^|[^\p{L}\p{N}_])@(?:naz|ناز)(?=$|[^\p{L}\p{N}_])/iu.test(messageText) || /(?:^|[^\p{L}\p{N}_])ناز(?:$|[^\p{L}\p{N}_])/iu.test(messageText)));
                                 const isReplyToNaz = (!m.forwarded && m.reply && (m.reply.name === (dbAiConfig.name || 'NAZ Ai') || m.reply.name === 'NAZ Ai'));
                                 
                                 if (isMention || isReplyToNaz) {
@@ -1151,26 +1152,27 @@ import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebas
                 return;
             }
             
-            // إعادة التحقق من قاعدة البيانات لمنع التكرار من عدة أجهزة
+            // حجز ذرّي لرسالة المنشن: جهاز واحد فقط يستطيع بدء رد ناز.
             try {
-                const msgCheck = await get(ref(db, `messages/${messageKey}/aiResponded`));
-                if (msgCheck.exists() && msgCheck.val() === true) {
-                    console.log('⏭️ Message already responded to, skipping');
+                const claim = await runTransaction(
+                    ref(db, `messages/${messageKey}/aiResponded`),
+                    current => current === true ? undefined : true,
+                    { applyLocally: false }
+                );
+                if (!claim.committed) {
+                    console.log('⏭️ Another device already claimed this mention');
                     return;
                 }
             } catch (e) {
-                console.warn('Could not verify aiResponded status, proceeding anyway');
+                console.error('Could not claim AI response safely; skipping to avoid duplicate requests', e);
+                return;
             }
-            
-            // وضع علامة فوراً لمنع أي جهاز ثاني من الرد
-            try {
-                await update(ref(db, `messages/${messageKey}`), { aiResponded: true });
-            } catch (e) {
-                console.warn('Could not set aiResponded flag');
-            }
+
+            const safeUserMessage = String(userMessage || '').slice(0, 1500);
+            const safeUserName = String(userName || 'صديق').slice(0, 60);
             
             showNotification('NAZ Ai يكتب الآن... 🤖');
-            console.log(`🤖 AI triggered by ${userName}: "${userMessage}"`);
+            console.log(`🤖 AI triggered by ${safeUserName}: "${safeUserMessage}"`);
             
             const prompt = `أنتِ فتاة اسمك ${dbAiConfig.name || 'ناز'} (NAZ)، عمرك 18 سنة، وأنتِ من العراق وتحديداً من بغداد منطقة المنصور.
 مطورك ومبرمجك ومالكك هو شخص اسمه رضا (reza).
@@ -1180,8 +1182,8 @@ import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebas
 - لا تقومي بتعريف نفسك أو ذكر تفاصيلك (مثل اسمك، عمرك، مدينتك، أو مالكك) إلا إذا سألك المستخدم عنها صراحة.
 - ردي بشكل مباشر وطبيعي، وبدون ذكر اسمك في البداية بشكل آلي.
 
-اسم المستخدم الذي يكلمك هو: ${userName}
-رسالة المستخدم هي: "${userMessage}"`;
+اسم المستخدم الذي يكلمك هو: ${safeUserName}
+رسالة المستخدم هي: "${safeUserMessage}"`;
 
             try {
                 const response = await fetch('https://openrouter.ai/api/v1/chat/completions', {
@@ -1335,13 +1337,27 @@ import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebas
                     `;
                     list.appendChild(item);
                 });
+                const countLabel = document.getElementById('members-count');
+                if (countLabel) countLabel.textContent = String(onlineCount);
             }, (error) => {
                 console.error('Members listener error:', error);
             });
         }
 
         window.toggleMembers = () => {
-            document.getElementById('members-sidebar').classList.toggle('open');
+            const panel = document.getElementById('members-sidebar');
+            const trigger = document.getElementById('members-trigger');
+            const isOpen = !panel.classList.contains('open');
+            panel.classList.toggle('open', isOpen);
+            panel.setAttribute('aria-hidden', String(!isOpen));
+            trigger.setAttribute('aria-expanded', String(isOpen));
+            if (isOpen) closeMoreMenu();
+        };
+
+        window.closeMembers = () => {
+            document.getElementById('members-sidebar')?.classList.remove('open');
+            document.getElementById('members-sidebar')?.setAttribute('aria-hidden', 'true');
+            document.getElementById('members-trigger')?.setAttribute('aria-expanded', 'false');
         };
 
         window.toggleMoreMenu = () => {
@@ -1367,11 +1383,18 @@ import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebas
 
         document.addEventListener('click', event => {
             if (!event.target.closest('#more-menu') && !event.target.closest('#more-menu-trigger')) closeMoreMenu();
+            if (!event.target.closest('#members-sidebar') && !event.target.closest('#members-trigger')) closeMembers();
         });
         document.addEventListener('keydown', event => {
-            if (event.key === 'Escape' && document.getElementById('more-menu')?.classList.contains('open')) {
-                closeMoreMenu();
-                document.getElementById('more-menu-trigger')?.focus();
+            if (event.key === 'Escape') {
+                if (document.getElementById('more-menu')?.classList.contains('open')) {
+                    closeMoreMenu();
+                    document.getElementById('more-menu-trigger')?.focus();
+                }
+                if (document.getElementById('members-sidebar')?.classList.contains('open')) {
+                    closeMembers();
+                    document.getElementById('members-trigger')?.focus();
+                }
             }
         });
 

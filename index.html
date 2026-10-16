@@ -131,7 +131,7 @@
                 <button class="header-btn" onclick="toggleSearch()" title="بحث">
                     <i class="fas fa-search"></i>
                 </button>
-                <button class="header-btn" onclick="toggleMembers()" title="الأعضاء">
+                <button class="header-btn" id="members-trigger" onclick="toggleMembers()" title="الأعضاء المتصلون" aria-label="إظهار الأعضاء المتصلين" aria-expanded="false" aria-controls="members-sidebar">
                     <i class="fas fa-users"></i>
                 </button>
                 <button class="header-btn" onclick="toggleTheme()" title="تغيير الثيم">
@@ -158,6 +158,14 @@
             </div>
         </div>
 
+        <section class="members-sidebar" id="members-sidebar" aria-label="الأعضاء المتصلون" aria-hidden="true">
+            <div class="members-header">
+                <span><i class="fas fa-users"></i> الأعضاء المتصلون <span class="members-count" id="members-count">0</span></span>
+                <button class="members-close-btn" type="button" onclick="toggleMembers()" title="إغلاق قائمة الأعضاء" aria-label="إغلاق قائمة الأعضاء"><i class="fas fa-times"></i></button>
+            </div>
+            <div class="members-list" id="members-list"></div>
+        </section>
+
         <div class="main-content">
             <div style="flex: 1; display: flex; flex-direction: column; min-width: 0;">
                 <div id="chat-flow"></div>
@@ -165,10 +173,6 @@
                     <span>يكتب</span>
                     <div class="typing-dots"><div class="typing-dot"></div><div class="typing-dot"></div><div class="typing-dot"></div></div>
                 </div>
-            </div>
-            <div class="members-sidebar" id="members-sidebar">
-                <div class="members-header"><i class="fas fa-users"></i> الأعضاء المتصلين</div>
-                <div class="members-list" id="members-list"></div>
             </div>
         </div>
 
