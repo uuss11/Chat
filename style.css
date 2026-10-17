@@ -912,3 +912,10 @@ button:focus-visible, [role="button"]:focus-visible, a:focus-visible, input:focu
     .search-results { max-height: 340px; }
     .tool-timer-display { font-size: 1.45rem; }
 }
+
+/* ===== زر نتائج جوجل داخل بطاقات البحث ===== */
+.web-head { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.web-google { margin-inline-start: auto; display: inline-flex; align-items: center; gap: 6px; padding: 4px 10px; border-radius: 999px; font-size: .78rem; text-decoration: none; color: #fff; background: linear-gradient(135deg, #4285f4, #34a853); border: 1px solid rgba(255,255,255,.18); }
+.web-google:hover { filter: brightness(1.08); }
+.search-mode.search-google { display: inline-flex; align-items: center; gap: 6px; text-decoration: none; background: linear-gradient(135deg, #4285f4, #34a853); color: #fff; border-color: transparent; }
+.search-mode.search-google:hover { filter: brightness(1.08); }
