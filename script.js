@@ -1,7 +1,7 @@
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js";
         import { getAnalytics } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-analytics.js";
         import { getDatabase, ref, set, get, push, onValue, query, limitToLast, remove, update, runTransaction, serverTimestamp, onDisconnect } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-database.js";
-        import { TOOL_KINDS, renderToolCard, applyToolAction, parseToolResponse, isToolRequest, buildToolPrompt, isImageRequest, buildImageQueryPrompt, detectRequestKind, buildMediaQueryPrompt, parseMediaPlan, wantsMultipleResults, buildFilePrompt, parseFileResponse, mountToolTimers, clearToolTimers, mountToolCanvases, clearToolCanvases } from './naz-tools.js?v=22';
+        import { TOOL_KINDS, renderToolCard, applyToolAction, parseToolResponse, isToolRequest, buildToolPrompt, isImageRequest, buildImageQueryPrompt, detectRequestKind, buildMediaQueryPrompt, parseMediaPlan, wantsMultipleResults, buildFilePrompt, parseFileResponse, mountToolTimers, clearToolTimers, mountToolCanvases, clearToolCanvases } from './naz-tools.js?v=23';
 
         // ============================================
         // 🔐 Security Utilities
@@ -66,6 +66,125 @@ import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebas
             const q = String(query || '').trim().slice(0, 120);
             if (q.length < 2) return '';
             return `https://www.google.com/search?hl=ar&q=${encodeURIComponent(q)}`;
+        }
+        /* ===== ميزات ناز: QR + معلومات تيك توك وانستغرام ===== */
+        const QR_ENDPOINT = 'https://api.qrserver.com/v1/create-qr-code/';
+        function qrImageUrl(data, size) {
+            const value = String(data || '').slice(0, 400);
+            const px = Math.min(600, Math.max(120, Number(size) || 320));
+            return `${QR_ENDPOINT}?size=${px}x${px}&margin=8&data=${encodeURIComponent(value)}`;
+        }
+        function detectQrRequest(text) {
+            const value = String(text || '').trim();
+            if (!value || value.length > 400) return null;
+            if (!/(qr|كيو\s?ار|كيوار|بار\s?كود|باركود|barcode|رمز)/iu.test(value)) return null;
+            let data = '';
+            const urlMatch = value.match(/https?:\/\/[^\s"'<>]+/i);
+            if (urlMatch) data = urlMatch[0];
+            if (!data) {
+                const quoted = value.match(/["«“]([^"»”]{2,240})["»”]/);
+                if (quoted) data = quoted[1];
+            }
+            if (!data) {
+                const after = value.match(/(?:على|إلى|الى|لـ|لهذا|لهذه|هذا|هذه|عن|data|text|ل)\s+(.{2,240})$/iu);
+                if (after) data = after[1];
+            }
+            if (!data) {
+                data = value.replace(/(سوي|سوّي|سويلي|سولي|اعمل|اعملي|اعمللي|اصنع|صمم|أنشئ|انشئ|ارسل|أرسل|اريد|أريد|بدي|ناز|لي|من فضلك|qr|كيو\s?ار|كيوار|بار\s?كود|باركود|barcode|كود|رمز)/giu, ' ');
+            }
+            data = data.replace(/["'»«”“]+$/g, '').replace(/\s+/g, ' ').trim().slice(0, 300);
+            if (data.length < 2) return null;
+            return { data };
+        }
+        function renderQrCard(qr) {
+            const data = String(qr && qr.data || '');
+            if (!data) return '';
+            const url = sanitizeURL(qr.url) || qrImageUrl(data, 320);
+            return `<div class="qr-card">
+                <img class="qr-img" src="${sanitizeHTML(url)}" alt="QR" loading="lazy" onclick="openImageModal('${sanitizeHTML(url)}')">
+                <div class="qr-side">
+                    <div class="qr-title"><i class="fas fa-qrcode"></i> رمز QR جاهز</div>
+                    <div class="qr-data" title="${sanitizeHTML(data)}">${sanitizeHTML(data.slice(0, 120))}${data.length > 120 ? '…' : ''}</div>
+                    <div class="qr-actions">
+                        <a class="qr-btn" href="${sanitizeHTML(url)}" target="_blank" rel="noopener noreferrer" download="qrcode.png"><i class="fas fa-download"></i> تنزيل</a>
+                        <a class="qr-btn ghost" href="${sanitizeHTML(url)}" target="_blank" rel="noopener noreferrer"><i class="fas fa-up-right-from-square"></i> فتح</a>
+                    </div>
+                </div>
+            </div>`;
+        }
+        const SOCIAL_RULES = [
+            { platform: 'tiktok', words: /(تيك\s?توك|تكتوك|tik\s?tok|tiktok|tik-tok)/iu, label: 'تيك توك', icon: 'fa-music' },
+            { platform: 'instagram', words: /(انستا|إنستا|انستغرام|إنستغرام|انستكرام|instagram|insta)/iu, label: 'انستغرام', icon: 'fa-camera' }
+        ];
+        function detectSocialRequest(text) {
+            const value = String(text || '').trim();
+            if (!value || value.length > 240) return null;
+            const rule = SOCIAL_RULES.find(item => item.words.test(value));
+            if (!rule) return null;
+            const cleaned = value.replace(/@(?:naz|ناز)/giu, ' ');
+            const handle = cleaned.match(/@([A-Za-z0-9._]{2,30})/)
+                || cleaned.match(/(?:يوزر|حساب|بروفايل|profile|username|user)\s*[:=]?\s*@?([A-Za-z0-9._]{2,30})/iu);
+            const user = handle ? handle[1].replace(/^@+/, '').replace(/[.]+$/, '') : '';
+            const searchVerb = /(ابحث|أبحث|ابحثي|بحث|دور|فتش|لقيلي|جيبلي|search|find)/iu.test(value);
+            if (user) return { platform: rule.platform, label: rule.label, user, action: 'profile' };
+            if (searchVerb) {
+                const query = cleaned
+                    .replace(rule.words, ' ')
+                    .replace(/(ابحث|أبحث|ابحثي|بحث|دور|فتش|لقيلي|جيبلي|عن|في|على|داخل|search|find)/giu, ' ')
+                    .replace(/\s+/g, ' ')
+                    .trim()
+                    .slice(0, 80);
+                if (query.length >= 2) return { platform: rule.platform, label: rule.label, user: '', action: 'search', query };
+            }
+            return null;
+        }
+        async function fetchSocialProfile(platform, user) {
+            const api = typeof resolveCloudApiUrl === 'function' ? resolveCloudApiUrl() : '';
+            if (!api) return null;
+            const payload = await fetchJsonWithTimeout(`${api}/${platform}?user=${encodeURIComponent(String(user || '').replace(/[^A-Za-z0-9._]/g, ''))}`, 20000);
+            if (!payload || payload.ok === false) {
+                if (payload && payload.error) console.warn('☁️ social lookup failed:', payload.error, payload.tried || '');
+                return null;
+            }
+            return payload.profile || null;
+        }
+        function renderProfileCard(profile) {
+            const p = profile || {};
+            const isIg = p.platform === 'instagram';
+            const label = isIg ? 'انستغرام' : 'تيك توك';
+            const handle = sanitizeHTML(String(p.username || ''));
+            if (!handle) return '';
+            const avatar = sanitizeURL(p.avatar) || '';
+            const num = value => (value === null || value === undefined || Number.isNaN(Number(value)))
+                ? ''
+                : Number(value).toLocaleString('en-US');
+            const stats = [
+                ['المتابعون', num(p.followers)],
+                ['يتابع', num(p.following)],
+                [isIg ? 'المنشورات' : 'الفيديوهات', num(p.videos)],
+                [isIg ? '' : 'الإعجابات', isIg ? '' : num(p.likes)]
+            ].filter(row => row[0] && row[1])
+                .map(row => `<div class="profile-stat"><strong>${sanitizeHTML(row[1])}</strong><span>${row[0]}</span></div>`)
+                .join('');
+            const region = /^[A-Za-z]{2}$/.test(String(p.region || '')) ? String(p.region).toUpperCase() : '';
+            const metaBits = [];
+            if (region) metaBits.push(`المنطقة: ${sanitizeHTML(region)}`);
+            metaBits.push(p.private ? 'حساب خاص 🔒' : 'حساب عام');
+            if (p.category) metaBits.push(sanitizeHTML(String(p.category).slice(0, 40)));
+            const link = sanitizeURL(p.link) || (isIg ? `https://www.instagram.com/${encodeURIComponent(String(p.username))}/` : `https://www.tiktok.com/@${encodeURIComponent(String(p.username))}`);
+            return `<div class="profile-card ${isIg ? 'is-ig' : 'is-tt'}">
+                <div class="profile-top">
+                    ${avatar ? `<img class="profile-avatar" src="${sanitizeHTML(avatar)}" alt="" loading="lazy">` : '<span class="profile-avatar fallback"><i class="fas fa-user"></i></span>'}
+                    <div class="profile-id">
+                        <strong>${sanitizeHTML(String(p.nickname || p.username).slice(0, 60))}${p.verified ? ' <i class="fas fa-circle-check verified"></i>' : ''}</strong>
+                        <span>@${handle} · ${label}</span>
+                    </div>
+                    <a class="profile-open" href="${sanitizeHTML(link)}" target="_blank" rel="noopener noreferrer" title="فتح الحساب"><i class="fas fa-up-right-from-square"></i></a>
+                </div>
+                ${p.bio ? `<div class="profile-bio">${sanitizeHTML(String(p.bio).slice(0, 220))}</div>` : ''}
+                ${stats ? `<div class="profile-stats">${stats}</div>` : ''}
+                <div class="profile-meta">${metaBits.join(' · ')}${p.external ? ` · <a href="${sanitizeHTML(sanitizeURL(p.external))}" target="_blank" rel="noopener noreferrer">الرابط</a>` : ''}</div>
+            </div>`;
         }
         function updateGoogleSearchStatus() {
             const status = document.getElementById('ai-google-status');
@@ -223,7 +342,11 @@ import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebas
             const googleLink = cse
                 ? `<a class="web-google" href="${sanitizeHTML(cse)}" target="_blank" rel="noopener noreferrer"><i class="fas fa-google"></i> نتائج جوجل</a>`
                 : '';
-            return `<div class="web-card"><div class="web-head"><i class="fas fa-globe"></i><span>نتائج الويب · ${engine}</span>${googleLink}</div><div class="search-results">${items}</div></div>`;
+            const extra = sanitizeURL(web?.extraLink);
+            const extraLink = extra
+                ? `<a class="web-google web-extra" href="${sanitizeHTML(extra)}" target="_blank" rel="noopener noreferrer"><i class="fas fa-up-right-from-square"></i> ${sanitizeHTML(String(web?.extraLabel || 'المنصة').slice(0, 30))}</a>`
+                : '';
+            return `<div class="web-card"><div class="web-head"><i class="fas fa-globe"></i><span>نتائج الويب · ${engine}</span>${extraLink}${googleLink}</div><div class="search-results">${items}</div></div>`;
         }
 
         function renderResultsCard(results, caption) {
@@ -711,6 +834,12 @@ import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebas
                 showChosenResult,
                 renderWebCard,
                 googleSearchUrl,
+                renderProfileCard,
+                renderQrCard,
+                qrImageUrl,
+                detectQrRequest,
+                detectSocialRequest,
+                fetchSocialProfile,
                 detectRequestKind,
                 wantsMultipleResults,
                 runSearch,
@@ -1084,6 +1213,12 @@ import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebas
                     } else if (m.file && m.file.content) {
                         fileRegistry.set(child.key, m.file);
                         content = renderFileCard(child.key, m.file, m.txt);
+                    } else if (m.profile && m.profile.username) {
+                        content = renderProfileCard(m.profile);
+                        if (m.caption) content += `<div class="image-caption">${sanitizeHTML(m.caption)}</div>`;
+                    } else if (m.qr && m.qr.data) {
+                        content = renderQrCard(m.qr);
+                        if (m.caption) content += `<div class="image-caption">${sanitizeHTML(m.caption)}</div>`;
                     } else if (m.web && Array.isArray(m.web.items) && m.web.items.length) {
                         content = renderWebCard(m.web);
                     } else if (m.results && Array.isArray(m.results.items) && m.results.items.length) {
@@ -2421,7 +2556,90 @@ import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebas
 
             const requestKind = detectRequestKind(safeUserMessage).kind;
             console.log('🧭 NAZ request kind:', requestKind);
-
+            const qrRequest = detectQrRequest(safeUserMessage);
+            if (qrRequest) {
+                try {
+                    await push(ref(db, 'messages'), {
+                        uid: 'naz_ai',
+                        name: aiName,
+                        txt: '',
+                        time: serverTimestamp(),
+                        avatar: aiAvatar,
+                        caption: `رمز QR جاهز · ${qrRequest.data.slice(0, 70)}`.slice(0, 160),
+                        qr: { data: qrRequest.data, url: qrImageUrl(qrRequest.data, 320) },
+                        reply: { name: safeUserName, txt: safeUserMessage.slice(0, 120) }
+                    });
+                    showNotification('✅ ناز جهّزت رمز QR');
+                    return;
+                } catch (error) {
+                    console.warn('QR route failed, falling back to text:', error);
+                }
+            }
+            const socialRequest = detectSocialRequest(safeUserMessage);
+            if (socialRequest) {
+                try {
+                    if (socialRequest.action === 'profile') {
+                        showNotification(`NAZ تدوّر حساب ${socialRequest.label}... 🔍`);
+                        const profile = await fetchSocialProfile(socialRequest.platform, socialRequest.user);
+                        if (profile) {
+                            await push(ref(db, 'messages'), {
+                                uid: 'naz_ai',
+                                name: aiName,
+                                txt: '',
+                                time: serverTimestamp(),
+                                avatar: aiAvatar,
+                                caption: `معلومات حساب ${socialRequest.label}: @${socialRequest.user}`.slice(0, 160),
+                                profile,
+                                reply: { name: safeUserName, txt: safeUserMessage.slice(0, 120) }
+                            });
+                            showNotification(`✅ ناز جابت معلومات @${socialRequest.user}`);
+                            return;
+                        }
+                        const barUrl = socialRequest.platform === 'instagram'
+                            ? `https://www.instagram.com/${encodeURIComponent(socialRequest.user)}/`
+                            : `https://www.tiktok.com/@${encodeURIComponent(socialRequest.user)}`;
+                        await push(ref(db, 'messages'), {
+                            uid: 'naz_ai',
+                            name: aiName,
+                            txt: `ما كدرت أجيب بيانات @${socialRequest.user} من ${socialRequest.label} (المنصة تحجب السيرفرات). افتح الحساب من الرابط: ${barUrl}`,
+                            time: serverTimestamp(),
+                            avatar: aiAvatar,
+                            reply: { name: safeUserName, txt: safeUserMessage.slice(0, 120) }
+                        });
+                        showNotification('⚠️ المنصة حجبت الجلب، أرسلت رابط الحساب');
+                        return;
+                    }
+                    const platformSearchUrl = socialRequest.platform === 'instagram'
+                        ? `https://www.instagram.com/explore/search/keyword/?q=${encodeURIComponent(socialRequest.query)}`
+                        : `https://www.tiktok.com/search?q=${encodeURIComponent(socialRequest.query)}`;
+                    showNotification(`NAZ تبحث في ${socialRequest.label}... 🔍`);
+                    const searchResult = await runSearch(socialRequest.query, 'web', 1);
+                    const items = (searchResult.items || []).slice(0, 6);
+                    const searchMessage = {
+                        uid: 'naz_ai',
+                        name: aiName,
+                        txt: items.length ? '' : `بحث ${socialRequest.label} عن "${socialRequest.query}": ${platformSearchUrl}`,
+                        time: serverTimestamp(),
+                        avatar: aiAvatar,
+                        caption: `بحث ${socialRequest.label} عن: ${socialRequest.query}`.slice(0, 160),
+                        reply: { name: safeUserName, txt: safeUserMessage.slice(0, 120) }
+                    };
+                    if (items.length) {
+                        searchMessage.web = {
+                            engine: searchResult.engine,
+                            items,
+                            query: socialRequest.query,
+                            extraLink: platformSearchUrl,
+                            extraLabel: `نتائج ${socialRequest.label}`
+                        };
+                    }
+                    await push(ref(db, 'messages'), searchMessage);
+                    showNotification(`✅ ناز جابت نتائج ${socialRequest.label}`);
+                    return;
+                } catch (error) {
+                    console.warn('Social route failed, falling back to text:', error);
+                }
+            }
             if (requestKind === 'web') {
                 try {
                     showNotification('NAZ تبحث في الويب... 🌐');
