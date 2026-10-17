@@ -19,11 +19,111 @@ const formatValue = value => {
     return String(value ?? '');
 };
 
-const CUSTOM_CONTROL_TYPES = ['display', 'progress', 'button', 'slider', 'toggle', 'input', 'note', 'list', 'timer'];
+const CUSTOM_CONTROL_TYPES = ['display', 'progress', 'button', 'slider', 'toggle', 'input', 'note', 'list', 'timer', 'visual'];
 const CUSTOM_OP_TYPES = ['add', 'sub', 'set', 'toggle', 'clear', 'pop', 'push', 'random', 'reset'];
+export const VISUAL_PRESETS = ['heart', 'confetti', 'stars', 'drawing'];
+
+const requestVerb = /(ارسل|أرسل|ابعث|ابعت|هات|جيب|جيبلي|وريني|ورّيني|دور|دوّر|ابحث|لقي|لاقي|احتاج|محتاج|اريد|أريد|ابغى|أبغى|سوي|سوّي|سويلي|اعمل|اعملي|اعمللي|اصنع|صمم|ابني|ركب|search|find|send|show|need|want|give)/iu;
+const interactiveWords = /(تفاعلي|تفاعلية|قلب|لعبة|لعبه|game|انيميشن|متحرك|متغيرة|تفاعليه)/iu;
+const toolWords = /(أداة|اداة|آلة|الة|widget|أداة تفاعلية|أدوات)/iu;
+const toolKindWords = /(حاسبة|حاسبه|عدّاد|عداد|مؤقت|مؤقّت|تايمر|تصويت|استفتاء|قائمة|تشيك ليست|مهام|ملاحظات|نوت|نرد|زهر|قرعة|محوّل|محول|تحويل وحدات|إكس|اكس او|تيك تاك تو|x-o|لعبة|لوحة|سكور|نقاط|ميزانية|حضور|عجلة|رسمة|رسم|دفتر|تذكرة|جدول)/iu;
+const audioWords = /(اغنية|أغنية|اغنيه|أغنيه|موسيق|مقطوعة|مقطوعه|نغمة|نغمه|صوتيات|مقطع صوتي|تسجيل صوتي|بودكاست|podcast|song|music|audio|mp3|ogg|wav)/iu;
+const videoWords = /(فيديو|فديو|فديوهات|مقطع مرئي|مقاطع مرئية|video|mp4|webm|movie|فيلم|أفلام|افلام|فلوج|vlog|يوتيوب|youtube|مشهد)/iu;
+const fileWords = /(ملف|ملفات|كود|كودات|سكربت|برنامج صغير|html|css|javascript|jsx|typescript|python|py|json|xml|sql|yaml|markdown|ملف نصي|code|script|source code|snippet)/iu;
+const imageWords = /(صورة|صوره|صور|رسمة|رسمه|شعار|لوجو|خلفية|خلفيه|بوستر|ملصق|ستيكر|ايموجي|أيقونة|ايقونة|image|photo|picture|wallpaper|png|jpg|jpeg|webp)/iu;
+
+export function detectRequestKind(text) {
+    const value = String(text || '').trim();
+    if (!value) return { kind: 'text' };
+    const wantsSomething = requestVerb.test(value);
+    const buildWord = /(سوي|سوّي|سويلي|اعمل|اعملي|اعمللي|اصنع|صمم|صمّمي|ابني|ركب|أنشئ|انشئ|ضيف|أضف|خلّي|خلي|قدم|قدّم)/iu;
+    if (toolWords.test(value) || interactiveWords.test(value) || (buildWord.test(value) && toolKindWords.test(value))) {
+        if (!(audioWords.test(value) || videoWords.test(value) || fileWords.test(value))) return { kind: 'interactive' };
+    }
+    const soundWords = /(صوت|أصوات|اصوات|نغمة|نغمات|sound|sounds|sfx)/iu;
+    const audioIntent = audioWords.test(value) || (soundWords.test(value) && wantsSomething);
+    if (audioIntent && !videoWords.test(value) && (wantsSomething || value.length <= 40 || audioWords.test(value))) {
+        return { kind: 'audio' };
+    }
+    if (videoWords.test(value)) return { kind: 'video' };
+    if (fileWords.test(value) && (wantsSomething || value.length <= 40)) return { kind: 'file' };
+    if (imageWords.test(value) && (wantsSomething || value.length <= 40)) return { kind: 'image' };
+    return { kind: 'text' };
+}
+
+export function buildMediaQueryPrompt(userMessage, userName, kind) {
+    const target = kind === 'audio'
+        ? 'مقطع صوتي أو أغنية أو مقطوعة موسيقية'
+        : kind === 'video'
+            ? 'مقطع فيديو قصير'
+            : 'صورة';
+    return `المستخدم ${userName} طلب ${target}: "${userMessage}"
+اكتب من 1 إلى 3 عبارات بحث قصيرة (كلمتين إلى أربع كلمات) للعثور على ${target} مطابق تماماً للطلب.
+- ركّز على جوهر الطلب (الشيء، المكان، النوع، الفنان إن ذُكر) وتجنّب الكلمات العامة.
+- فضّل الإنجليزية للدقة، وأضف عبارة عربية واحدة مناسبة.
+- لا تكتب روابط.
+أجب بـ JSON فقط بهذا الشكل وبلا أي نص إضافي:
+{"queries":["short english query","عبارة عربية"],"title":"عنوان قصير لما وجدته","caption":"جملة قصيرة باللهجة العراقية"}`;
+}
+
+export function parseMediaPlan(rawText) {
+    const text = String(rawText || '');
+    const start = text.indexOf('{');
+    const end = text.lastIndexOf('}');
+    if (start === -1 || end <= start) return null;
+    let parsed;
+    try { parsed = JSON.parse(text.slice(start, end + 1)); } catch { return null; }
+    const queries = Array.isArray(parsed.queries)
+        ? parsed.queries.map(value => String(value || '').replace(/\s+/g, ' ').trim()).filter(value => value.length > 1).slice(0, 3)
+        : [];
+    if (!queries.length) return null;
+    return {
+        queries,
+        title: cleanText(parsed.title, 80),
+        caption: cleanText(parsed.caption, 140)
+    };
+}
+
+export function buildFilePrompt(userMessage, userName) {
+    return `المستخدم ${userName} طلب ملفاً أو كوداً: "${userMessage}"
+اكتب الملف كاملاً وجاهزاً للاستخدام، مع تعليقات مفيدة بالعربية عند الحاجة، وبأقصر صيغة تحقق الطلب.
+القواعد:
+- name: اسم الملف مع الامتداد الصحيح بالإنجليزية (مثل index.html أو app.js أو script.py).
+- language: صيغة العرض (html, css, javascript, python, json, sql, bash, text ...).
+- content: نص الملف كاملاً بأسطر \\n حقيقية داخل JSON.
+- لا تكتب أي شيء خارج JSON.
+أجب بـ JSON فقط:
+{"name":"index.html","language":"html","content":"...","caption":"جملة قصيرة بالعراقي"}`;
+}
+
+const LANGUAGE_BY_EXTENSION = { html: 'html', htm: 'html', css: 'css', js: 'javascript', mjs: 'javascript', jsx: 'jsx', ts: 'typescript', py: 'python', json: 'json', xml: 'xml', sql: 'sql', sh: 'bash', bash: 'bash', md: 'markdown', txt: 'text', c: 'c', cpp: 'cpp', cs: 'csharp', php: 'php', java: 'java', rb: 'ruby', go: 'go', rs: 'rust', yml: 'yaml', yaml: 'yaml', csv: 'text', svg: 'xml' };
+
+export function parseFileResponse(rawText) {
+    const text = String(rawText || '');
+    const start = text.indexOf('{');
+    const end = text.lastIndexOf('}');
+    if (start === -1 || end <= start) return null;
+    let parsed;
+    try { parsed = JSON.parse(text.slice(start, end + 1)); } catch { return null; }
+    const rawName = cleanText(parsed.name, 60)
+        .replace(/[^A-Za-z0-9._-]/g, '')
+        .replace(/\.{2,}/g, '.')
+        .replace(/^[._-]+/, '')
+        .slice(0, 60);
+    const content = typeof parsed.content === 'string' ? parsed.content.slice(0, 60000) : '';
+    if (!rawName || !content.trim()) return null;
+    const name = /\.[a-z0-9]{1,6}$/i.test(rawName) ? rawName : `${rawName}.txt`;
+    const extension = name.split('.').pop().toLowerCase();
+    const language = LANGUAGE_BY_EXTENSION[extension] || cleanText(parsed.language, 20).replace(/[^A-Za-z0-9+#-]/g, '') || 'text';
+    return {
+        file: { name, language, content, size: content.length },
+        caption: cleanText(parsed.caption, 140) || `جهّزت لك الملف ${name}.`
+    };
+}
 
 function defaultControlValue(control) {
     if (control.type === 'list') return [];
+    if (control.type === 'visual') return control.preset === 'drawing' ? [] : 0;
     if (control.type === 'toggle') return false;
     if (control.type === 'input' || control.type === 'note' || control.type === 'display') return '';
     if (control.type === 'timer') return clampNumber(control.seconds, 5, 7200, 60);
@@ -405,6 +505,14 @@ export const TOOL_KINDS = {
                     const seconds = endsAt ? Math.max(0, Math.round((endsAt - Date.now()) / 1000)) : clampNumber(value, 5, 7200, 60);
                     const clock = `${String(Math.floor(seconds / 60)).padStart(2, '0')}:${String(seconds % 60).padStart(2, '0')}`;
                     parts.push(`<div class="tool-timer" data-tool-timer data-ends="${endsAt || ''}"><div class="tool-timer-display">${clock}</div><div class="tool-row"><button type="button" class="tool-key tool-key-primary" data-tool-action="custom" data-tool-value="${index}" data-tool-mode="timer-start">تشغيل</button><button type="button" class="tool-key" data-tool-action="custom" data-tool-value="${index}" data-tool-mode="timer-reset">إعادة</button></div></div>`);
+                } else if (control.type === 'visual') {
+                    const preset = VISUAL_PRESETS.includes(control.preset) ? control.preset : 'heart';
+                    if (preset === 'drawing') {
+                        parts.push(`<div class="tool-canvas-wrap"><canvas class="tool-canvas" data-tool-canvas data-tool-key="${esc(control.key)}" width="520" height="300"></canvas><div class="tool-row tool-row-end"><span class="tool-status">${esc(control.label)} · انقر واسحب للرسم</span><button type="button" class="tool-key tool-key-warn" data-tool-action="custom" data-tool-value="${index}" data-tool-mode="canvas-clear">مسح</button></div></div>`);
+                    } else {
+                        const emoji = preset === 'stars' ? '⭐' : preset === 'confetti' ? '🎉' : '💗';
+                        parts.push(`<div class="tool-visual" data-tool-preset="${preset}"><button type="button" class="tool-visual-target" data-tool-action="custom" data-tool-value="${index}" data-tool-mode="visual-tap" aria-label="${esc(control.label)}"><span class="tool-visual-emoji">${emoji}</span><span class="tool-visual-hint">${esc(control.label)}</span></button><div class="tool-visual-count">${clampNumber(value, 0, 1e6, 0)}</div></div>`);
+                    }
                 }
             });
             flush();
@@ -464,6 +572,7 @@ export function normalizeToolSpec(spec) {
             if (type === 'progress') control.max = clampNumber(raw.max, 1, 1e6, 100);
             if (type === 'timer') control.seconds = clampNumber(raw.seconds, 5, 7200, 60);
             if (type === 'input' || type === 'note') control.placeholder = cleanText(raw.placeholder, 60);
+            if (type === 'visual') control.preset = VISUAL_PRESETS.includes(raw.preset) ? raw.preset : 'heart';
             if (typeof raw.suffix === 'string') control.suffix = cleanText(raw.suffix, 12);
             controls.push(control);
         });
@@ -495,13 +604,7 @@ export function isToolRequest(text) {
 }
 
 export function isImageRequest(text) {
-    const value = String(text || '');
-    if (!value) return false;
-    const imageWords = /(صورة|صوره|صور|رسمة|رسمه|شعار|لوجو|خلفية|خلفيه|بوستر|ملصق|ستيكر|ايموجي|image|photo|picture|png|jpg|jpeg|webp)/iu;
-    if (!imageWords.test(value)) return false;
-    if (isToolRequest(value)) return false;
-    const intent = /(ارسل|أرسل|ابعث|ابعت|هات|جيب|جيبلي|وريني|ورّيني|دور|دوّر|ابحث|لقي|لاقي|احتاج|محتاج|اريد|أريد|ابغى|أبغى|search|find|send|show|need|want)/iu;
-    return intent.test(value) || value.trim().length <= 40;
+    return detectRequestKind(text).kind === 'image';
 }
 
 export function buildImageQueryPrompt(userMessage, userName) {
@@ -541,8 +644,11 @@ export function buildToolPrompt(userMessage, userName, moodLabel) {
 - {"type":"note","key":"note","label":"ملاحظة"} — مساحة نص طويل.
 - {"type":"list","key":"items","label":"بنود"} — قائمة عناصر.
 - {"type":"timer","key":"t","seconds":60} — مؤقّت.
+- {"type":"visual","key":"hearts","preset":"heart","label":"انقر للقلوب"} — عنصر تفاعلي مرئي.
+  القيم المتاحة لـ preset: heart (قلب نابض يتزايد بالنقر)، stars (نجوم)، confetti (نثر احتفالي)، drawing (لوح رسم مشترك يرسم عليه الأعضاء).
 ويمكن أن تحمل config حقولاً إضافية: "intro" وصف قصير، و"options" قائمة خيارات، و"initial" قيم ابتدائية مثل {"score":0}.
 كل مكوّن يجب أن يملك key بالإنجليزية بدون مسافات.
+أي طلب تفاعلي غير الأدوات (قلب تفاعلي، رسمة تفاعلية، لعبة بسيطة، عدّاد نقرات، لوح رسم، نثر) يُبنى بالنوع custom مع مكوّن visual أو أزرار وعمليات.
 
 أجب بـ JSON فقط بهذا الشكل وبلا أي نص إضافي:
 {"kind":"نوع الأداة","title":"عنوان قصير بالعربية","caption":"جملة قصيرة تخبرهم أن الأداة جاهزة","config":{...}}`;
@@ -736,6 +842,20 @@ export function applyToolAction(kind, config, currentState, action, payload, ctx
     if (kind === 'custom') {
         if (action !== 'custom') return null;
         const controls = Array.isArray(config?.controls) ? config.controls : [];
+        if (payload?.stroke) {
+            const target = controls.find(item => item.type === 'visual' && item.preset === 'drawing' && (!payload.strokeKey || item.key === payload.strokeKey));
+            if (!target) return null;
+            const strokes = Array.isArray(state[target.key]) ? state[target.key].slice() : [];
+            const points = Array.isArray(payload.stroke.points)
+                ? payload.stroke.points.slice(0, 80).map(point => [
+                    clampNumber(point?.[0], 0, 2000, 0),
+                    clampNumber(point?.[1], 0, 2000, 0)
+                ])
+                : [];
+            if (points.length < 2 || strokes.length >= 60) return null;
+            strokes.push({ color: typeof payload.stroke.color === 'string' ? payload.stroke.color.slice(0, 16) : '#7dd3fc', points });
+            return { ...state, [target.key]: strokes, updatedBy: name };
+        }
         const index = Number(payload?.value);
         const control = controls[index];
         if (!control || !control.key) return null;
@@ -764,6 +884,20 @@ export function applyToolAction(kind, config, currentState, action, payload, ctx
         if (mode === 'timer-reset') {
             next[control.key] = clampNumber(control.seconds, 5, 7200, 60);
             next[`${control.key}__ends`] = 0;
+            next.updatedBy = name;
+            return next;
+        }
+
+        if (mode === 'visual-tap') {
+            if (control.type !== 'visual' || control.preset === 'drawing') return null;
+            next[control.key] = clampNumber(state[control.key], 0, 1e6, 0) + 1;
+            next.updatedBy = name;
+            return next;
+        }
+
+        if (mode === 'canvas-clear') {
+            if (control.type !== 'visual' || control.preset !== 'drawing') return null;
+            next[control.key] = [];
             next.updatedBy = name;
             return next;
         }
@@ -880,6 +1014,80 @@ export function renderToolCard(msgKey, tool, state, ctx) {
 }
 
 const activeTimers = [];
+const activeCanvases = [];
+
+function drawStroke(context, stroke) {
+    const points = Array.isArray(stroke?.points) ? stroke.points : [];
+    if (points.length < 2) return;
+    context.strokeStyle = typeof stroke.color === 'string' ? stroke.color : '#7dd3fc';
+    context.lineWidth = 3;
+    context.lineCap = 'round';
+    context.lineJoin = 'round';
+    context.beginPath();
+    context.moveTo(points[0][0], points[0][1]);
+    for (let index = 1; index < points.length; index++) context.lineTo(points[index][0], points[index][1]);
+    context.stroke();
+}
+
+export function clearToolCanvases() {
+    while (activeCanvases.length) {
+        const canvas = activeCanvases.pop();
+        canvas.replaceWith(canvas.cloneNode(true));
+    }
+}
+
+export function mountToolCanvases(root, options = {}) {
+    clearToolCanvases();
+    if (!root) return;
+    root.querySelectorAll('canvas[data-tool-canvas]').forEach(canvas => {
+        const card = canvas.closest('[data-tool-card]');
+        const msgKey = card?.dataset.toolMsg;
+        const key = canvas.dataset.toolKey;
+        const context = canvas.getContext('2d');
+        if (!context) return;
+        context.clearRect(0, 0, canvas.width, canvas.height);
+        context.fillStyle = 'rgba(0,0,0,0.18)';
+        context.fillRect(0, 0, canvas.width, canvas.height);
+        const existing = options.resolve ? options.resolve(msgKey, key) : [];
+        (Array.isArray(existing) ? existing : []).forEach(stroke => drawStroke(context, stroke));
+        let current = null;
+        const position = event => {
+            const rect = canvas.getBoundingClientRect();
+            return [
+                Math.round((event.clientX - rect.left) * canvas.width / Math.max(1, rect.width)),
+                Math.round((event.clientY - rect.top) * canvas.height / Math.max(1, rect.height))
+            ];
+        };
+        canvas.addEventListener('pointerdown', event => {
+            event.preventDefault();
+            try { canvas.setPointerCapture(event.pointerId); } catch { /* ignore */ }
+            current = [position(event)];
+        });
+        canvas.addEventListener('pointermove', event => {
+            if (!current) return;
+            const point = position(event);
+            const previous = current[current.length - 1];
+            current.push(point);
+            context.strokeStyle = canvas.dataset.color || '#7dd3fc';
+            context.lineWidth = 3;
+            context.lineCap = 'round';
+            context.beginPath();
+            context.moveTo(previous[0], previous[1]);
+            context.lineTo(point[0], point[1]);
+            context.stroke();
+        });
+        const finish = () => {
+            if (!current) return;
+            const points = current.slice(0, 80);
+            current = null;
+            options.onStroke?.(msgKey, key, { points, color: canvas.dataset.color || '#7dd3fc' });
+        };
+        canvas.addEventListener('pointerup', finish);
+        canvas.addEventListener('pointerleave', finish);
+        canvas.addEventListener('pointercancel', finish);
+        activeCanvases.push(canvas);
+    });
+}
 
 export function clearToolTimers() {
     while (activeTimers.length) clearInterval(activeTimers.pop());
