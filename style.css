@@ -956,3 +956,39 @@ button:focus-visible, [role="button"]:focus-visible, a:focus-visible, input:focu
 .embed-head a { color: inherit; text-decoration: none; opacity: .85; display: inline-flex; align-items: center; gap: 5px; }
 .embed-frame { width: 100%; height: 460px; border: 0; display: block; background: #000; }
 .embed-note { padding: 8px 12px; font-size: .7rem; opacity: .65; }
+
+/* ===== بطاقة توليد الصور (ناز ترسم) ===== */
+.ai-gen-card { border-radius: 18px; overflow: hidden; border: 1px solid rgba(255,255,255,.14); background: rgba(255,255,255,.035); }
+.ai-gen-card.is-painting { padding: 12px; }
+.ai-gen-canvas { position: relative; height: 210px; border-radius: 14px; overflow: hidden; background: radial-gradient(circle at 30% 30%, rgba(120,90,255,.35), transparent 60%), radial-gradient(circle at 70% 70%, rgba(0,200,200,.28), transparent 60%), #10121a; }
+.ai-gen-blob { position: absolute; width: 55%; height: 55%; border-radius: 50%; filter: blur(26px); opacity: .75; mix-blend-mode: screen; }
+.ai-gen-blob.b1 { background: #ff4d8d; top: -10%; left: -6%; animation: aiBlob1 5.5s ease-in-out infinite; }
+.ai-gen-blob.b2 { background: #4dd2ff; bottom: -14%; right: -8%; animation: aiBlob2 6.5s ease-in-out infinite; }
+.ai-gen-blob.b3 { background: #ffd24d; top: 32%; left: 32%; width: 40%; height: 40%; animation: aiBlob3 7.5s ease-in-out infinite; }
+.ai-gen-sheen { position: absolute; inset: 0; background: linear-gradient(115deg, transparent 35%, rgba(255,255,255,.16) 50%, transparent 65%); transform: translateX(-120%); animation: aiSheen 2.6s linear infinite; }
+.ai-gen-brush { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; font-size: 2rem; color: rgba(255,255,255,.9); animation: aiBrush 2.2s ease-in-out infinite; text-shadow: 0 4px 18px rgba(0,0,0,.45); }
+.ai-gen-waves { display: flex; align-items: flex-end; gap: 6px; height: 34px; margin: 10px 4px 4px; }
+.ai-gen-waves span { flex: 1; border-radius: 6px 6px 3px 3px; background: linear-gradient(180deg, rgba(160,120,255,.85), rgba(80,220,220,.65)); animation: aiWave 1.5s ease-in-out infinite; }
+.ai-gen-waves span:nth-child(1) { animation-delay: 0s; } .ai-gen-waves span:nth-child(2) { animation-delay: .12s; }
+.ai-gen-waves span:nth-child(3) { animation-delay: .24s; } .ai-gen-waves span:nth-child(4) { animation-delay: .36s; }
+.ai-gen-waves span:nth-child(5) { animation-delay: .48s; } .ai-gen-waves span:nth-child(6) { animation-delay: .6s; }
+.ai-gen-status { position: relative; height: 20px; margin-top: 8px; font-size: .82rem; text-align: center; }
+.ai-gen-status span { position: absolute; inset: 0; opacity: 0; animation: aiStatus 7.5s infinite; }
+.ai-gen-status .s1 { animation-delay: 0s; } .ai-gen-status .s2 { animation-delay: 2.5s; } .ai-gen-status .s3 { animation-delay: 5s; }
+.ai-gen-prompt { margin-top: 6px; font-size: .72rem; opacity: .6; text-align: center; direction: rtl; }
+.ai-gen-grid { display: grid; grid-template-columns: 1fr; gap: 6px; }
+.ai-gen-grid.multi { grid-template-columns: 1fr 1fr; }
+.ai-gen-item { position: relative; display: block; line-height: 0; }
+.ai-gen-item img { width: 100%; height: auto; border-radius: 14px; display: block; }
+.ai-gen-open { position: absolute; top: 8px; left: 8px; width: 28px; height: 28px; border-radius: 9px; background: rgba(0,0,0,.55); color: #fff; display: flex; align-items: center; justify-content: center; font-size: .75rem; opacity: 0; transition: opacity .2s; }
+.ai-gen-item:hover .ai-gen-open { opacity: 1; }
+.ai-gen-card.is-stale { padding: 14px; text-align: center; opacity: .85; }
+.ai-gen-stale { font-size: .82rem; }
+@keyframes aiBlob1 { 0%,100% { transform: translate(0,0) scale(1); } 50% { transform: translate(18%,12%) scale(1.15); } }
+@keyframes aiBlob2 { 0%,100% { transform: translate(0,0) scale(1.05); } 50% { transform: translate(-16%,-12%) scale(.9); } }
+@keyframes aiBlob3 { 0%,100% { transform: translate(0,0) scale(.95); } 50% { transform: translate(12%,-16%) scale(1.2); } }
+@keyframes aiSheen { 0% { transform: translateX(-120%); } 100% { transform: translateX(120%); } }
+@keyframes aiBrush { 0%,100% { transform: rotate(-9deg) translateY(-3px); } 50% { transform: rotate(9deg) translateY(3px); } }
+@keyframes aiWave { 0%,100% { height: 22%; opacity: .65; } 50% { height: 100%; opacity: 1; } }
+@keyframes aiStatus { 0% { opacity: 0; } 6% { opacity: 1; } 30% { opacity: 1; } 36% { opacity: 0; } 100% { opacity: 0; } }
+@media (max-width: 520px) { .ai-gen-canvas { height: 170px; } .ai-gen-grid.multi { grid-template-columns: 1fr; } }

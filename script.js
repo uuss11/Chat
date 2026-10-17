@@ -1,7 +1,7 @@
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js";
         import { getAnalytics } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-analytics.js";
         import { getDatabase, ref, set, get, push, onValue, query, limitToLast, remove, update, runTransaction, serverTimestamp, onDisconnect } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-database.js";
-        import { TOOL_KINDS, renderToolCard, applyToolAction, parseToolResponse, isToolRequest, buildToolPrompt, isImageRequest, buildImageQueryPrompt, detectRequestKind, buildMediaQueryPrompt, parseMediaPlan, wantsMultipleResults, buildFilePrompt, parseFileResponse, mountToolTimers, clearToolTimers, mountToolCanvases, clearToolCanvases } from './naz-tools.js?v=30';
+        import { TOOL_KINDS, renderToolCard, applyToolAction, parseToolResponse, isToolRequest, buildToolPrompt, isImageRequest, buildImageQueryPrompt, detectRequestKind, buildMediaQueryPrompt, parseMediaPlan, wantsMultipleResults, buildFilePrompt, parseFileResponse, mountToolTimers, clearToolTimers, mountToolCanvases, clearToolCanvases } from './naz-tools.js?v=31';
 
         // ============================================
         // 🔐 Security Utilities
@@ -169,6 +169,72 @@ import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebas
                 .split('\\u003A').join(':')
                 .split('\\u003D').join('=')
                 .split('\\u003F').join('?');
+        }
+        // ===== توليد الصور (ناز ترسم) =====
+        const DRAW_STRONG = /(?:^|[\s،,.!؟:"'(\[])(?:@?)(?:ارسم|ارسمي|ارسمللي|ارسمني|ارسملنا|رسم|رسمة|رسمه|تخيل|تخيّل|خيال|draw|imagine|paint|sketch)(?:$|[\s،,.!؟:"')\]]|لي|لّي|لنا)/iu;
+        const DRAW_WEAK = /(انشاء|إنشاء|انشئ|أنشئ|انشأ|انشاءلي|اصنع|صمم|صممي|اعمل|سوي|سوّي|ولّد|ولد|gen\w*|creat\w*|mak\w*)/iu;
+        const DRAW_NOUN = /(صور[ةه]|صور|رسم[ةه]|رسم|شكل|شعار|تصميم|خلفية|بوستر|ملصق|لوقو|اي?قونة|أيقونة|logo|image|img|picture|photo|art|wallpaper|poster|banner|cover|sticker|avatar|icon)/iu;
+        const DRAW_MENTION = /(@|^|\s)(انشاء\s?صور|انشئ\s?صور|إنشاء\s?صور|@صور|@رسم|@ارسم|@paint|@draw)(?:$|[\s،,.!؟:"')\]]|\s)/iu;
+        const DRAW_DROP = ['ناز', 'naz', 'انشاء', 'إنشاء', 'انشئ', 'أنشئ', 'انشأ', 'اصنع', 'صمم', 'صممي', 'اعمل', 'سوي', 'سوّي', 'ولّد', 'صورة', 'صوره', 'صور', 'لي', 'لّي', 'لنا', 'النا', 'ه', 'ها', 'صورتين', 'صورتان', 'ثلاث', 'اربع', 'أربع', 'واحدة', '1', '2', '3', '4', '١', '٢', '٣', '٤', 'generate', 'create', 'make', 'draw', 'imagine', 'paint', 'sketch', 'image', 'img', 'picture', 'photo', 'a', 'an', 'the', 'me', 'please'];
+        const DRAW_PREFIX = ['ارسملنا', 'ارسمللي', 'ارسمني', 'ارسمي', 'ارسم', 'رسم', 'تخيّل', 'تخيل', 'انشئلي', 'انشئي', 'انشئ', 'إنشاء', 'انشاء', 'اصنع', 'صمملي', 'صممي', 'صمم', 'سويلي', 'سوّي', 'سوي', 'اعملي', 'اعمل', 'ولّدلي', 'ولّد', 'صورلي', 'جيبلي'];
+
+        function stripDrawTokens(value) {
+            const parts = String(value || '').replace(/@(?:naz|ناز)/giu, ' ').split(/\s+/);
+            const out = [];
+            for (let raw of parts) {
+                let t = String(raw || '').replace(/^@+/, '').replace(/^["'«»\-\s]+/, '').replace(/["'«»\-\s]+$/, '');
+                if (!t) continue;
+                if (DRAW_DROP.indexOf(t) >= 0) continue;
+                let sliced = false;
+                for (const pre of DRAW_PREFIX) {
+                    if (t === pre) { t = ''; sliced = true; break; }
+                    if (t.length > pre.length + 1 && t.indexOf(pre) === 0) { t = t.slice(pre.length); sliced = true; break; }
+                }
+                if (sliced && (!t || DRAW_DROP.indexOf(t) >= 0)) continue;
+                out.push(t);
+            }
+            return out.join(' ').trim();
+        }
+
+        function detectDrawRequest(text) {
+            const value = String(text || '').trim();
+            if (!value || value.length > 300) return null;
+            const strong = DRAW_STRONG.test(value);
+            const weak = DRAW_WEAK.test(value) && DRAW_NOUN.test(value);
+            const mention = DRAW_MENTION.test(value);
+            if (!strong && !weak && !mention) return null;
+            const prompt = stripDrawTokens(value).slice(0, 300);
+            const countMatch = value.match(/(صورتين|صورتان|2 صور|٢ صور|3 صور|٣ صور|ثلاث صور|4 صور|٤ صور|اربع صور|أربع صور)/u);
+            let count = 1;
+            if (countMatch) count = /(صورتين|صورتان|2|٢)/u.test(countMatch[0]) ? 2 : (/ثلاث|3|٣/.test(countMatch[0]) ? 3 : 4);
+            return { prompt: prompt, count: count, raw: value.slice(0, 200) };
+        }
+
+        function renderImageGenCard(m) {
+            const pending = m.pending && m.pending.kind === 'image' ? m.pending : null;
+            const imgs = Array.isArray(m.imgs) ? m.imgs.filter(u => /^https?:/.test(String(u))).slice(0, 4) : [];
+            if (pending) {
+                const started = Number(pending.started || 0);
+                if (started && Date.now() - started > 180000) {
+                    return `<div class="ai-gen-card is-stale"><div class="ai-gen-stale"><i class="fas fa-triangle-exclamation"></i> انقطعت عملية الرسم — اطلبها مرة ثانية وأكملها فوراً.</div><div class="ai-gen-prompt">${sanitizeHTML(String(pending.prompt || '').slice(0, 120))}</div></div>`;
+                }
+                return `<div class="ai-gen-card is-painting">
+                <div class="ai-gen-canvas">
+                    <span class="ai-gen-blob b1"></span><span class="ai-gen-blob b2"></span><span class="ai-gen-blob b3"></span>
+                    <span class="ai-gen-sheen"></span>
+                    <div class="ai-gen-brush"><i class="fas fa-paintbrush"></i></div>
+                </div>
+                <div class="ai-gen-waves"><span></span><span></span><span></span><span></span><span></span><span></span></div>
+                <div class="ai-gen-status"><span class="s1">ناز تفتح لوحة الرسم 🎨</span><span class="s2">تخلط الألوان…</span><span class="s3">ترسم التفاصيل ✨</span></div>
+                <div class="ai-gen-prompt">${sanitizeHTML(String(pending.prompt || '').slice(0, 140))}</div>
+            </div>`;
+            }
+            if (!imgs.length) return '';
+            return `<div class="ai-gen-card">
+            <div class="ai-gen-grid ${imgs.length > 1 ? 'multi' : ''}">
+                ${imgs.map((u, i) => `<a class="ai-gen-item" href="${sanitizeHTML(u)}" target="_blank" rel="noopener noreferrer"><img src="${sanitizeHTML(u)}" alt="${sanitizeHTML(String(m.caption || ('رسمة ناز ' + (i + 1))).slice(0, 120))}" loading="lazy"><span class="ai-gen-open"><i class="fas fa-up-right-from-square"></i></span></a>`).join('')}
+            </div>
+        </div>`;
         }
         function renderEmbedCard(embed) {
             const data = embed || {};
@@ -875,6 +941,8 @@ import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebas
                 googleSearchUrl,
                 renderProfileCard,
                 renderEmbedCard,
+                detectDrawRequest,
+                renderImageGenCard,
                 unescapeSocialValue,
                 renderQrCard,
                 qrImageUrl,
@@ -1239,7 +1307,10 @@ import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebas
                     const pinnedBadge = m.isPinned ? '<span class="pinned-badge"><i class="fas fa-thumbtack"></i> مثبت</span>' : '';
                     
                     let content = '';
-                    if (m.tool && TOOL_KINDS[m.tool.kind]) {
+                    if ((m.pending && m.pending.kind === 'image') || (Array.isArray(m.imgs) && m.imgs.length)) {
+                        content = renderImageGenCard(m);
+                        if (m.caption) content += `<div class="image-caption">${sanitizeHTML(m.caption)}</div>`;
+                    } else if (m.tool && TOOL_KINDS[m.tool.kind]) {
                         toolRegistry.set(child.key, {
                             tool: m.tool,
                             state: m.toolState,
@@ -2600,6 +2671,65 @@ import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebas
 
             const requestKind = detectRequestKind(safeUserMessage).kind;
             console.log('🧭 NAZ request kind:', requestKind);
+            const drawRequest = detectDrawRequest(safeUserMessage);
+            if (drawRequest) {
+                let drawKey = '';
+                try {
+                    showNotification('🎨 ناز بدت ترسم... انتظر شوي');
+                    const drawApi = typeof resolveCloudApiUrl === 'function' ? resolveCloudApiUrl() : '';
+                    const created = await push(ref(db, 'messages'), {
+                        uid: 'naz_ai',
+                        name: aiName,
+                        txt: '',
+                        time: serverTimestamp(),
+                        avatar: aiAvatar,
+                        pending: { kind: 'image', prompt: drawRequest.prompt, count: drawRequest.count, started: Date.now() },
+                        caption: `🎨 ناز ترسم: ${drawRequest.prompt}`.slice(0, 160),
+                        reply: { name: safeUserName, txt: safeUserMessage.slice(0, 120) }
+                    });
+                    drawKey = created && created.key ? created.key : '';
+                    if (!drawApi) throw new Error('no_api');
+                    const drawRes = await fetchJsonWithTimeout(`${drawApi}/image?prompt=${encodeURIComponent(drawRequest.prompt)}&count=${drawRequest.count}`, 150000);
+                    const drawUrls = (drawRes && Array.isArray(drawRes.urls)) ? drawRes.urls.filter(u => /^https?:/.test(String(u))) : [];
+                    if (!drawRes || drawRes.ok === false || !drawUrls.length) throw new Error((drawRes && (drawRes.error || drawRes.detail)) || 'gen_failed');
+                    if (drawKey) {
+                        await update(ref(db, 'messages/' + drawKey), {
+                            pending: null,
+                            imgs: drawUrls,
+                            model: String(drawRes.model || ''),
+                            caption: `🎨 ${drawRequest.prompt}`.slice(0, 160)
+                        });
+                    }
+                    showNotification('✅ ناز خلصت الرسمة');
+                    return;
+                } catch (drawError) {
+                    console.warn('🎨 image generation failed:', drawError);
+                    const errText = `ما كدرت أكمل الرسمة 😕 — جرّب مرة ثانية أو غيّر الوصف شوي.`;
+                    try {
+                        if (drawKey) {
+                            await update(ref(db, 'messages/' + drawKey), {
+                                pending: null,
+                                imgs: null,
+                                txt: errText,
+                                caption: `🎨 ${drawRequest.prompt}`.slice(0, 160)
+                            });
+                        } else {
+                            await push(ref(db, 'messages'), {
+                                uid: 'naz_ai',
+                                name: aiName,
+                                txt: errText,
+                                time: serverTimestamp(),
+                                avatar: aiAvatar,
+                                reply: { name: safeUserName, txt: safeUserMessage.slice(0, 120) }
+                            });
+                        }
+                    } catch (fallbackError) {
+                        console.warn('🎨 could not report failure:', fallbackError);
+                    }
+                    showNotification('⚠️ ما كدرت أرسم هالمرة');
+                    return;
+                }
+            }
             const qrRequest = detectQrRequest(safeUserMessage);
             if (qrRequest) {
                 try {
