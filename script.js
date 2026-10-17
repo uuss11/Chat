@@ -1,7 +1,7 @@
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js";
         import { getAnalytics } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-analytics.js";
         import { getDatabase, ref, set, get, push, onValue, query, limitToLast, remove, update, runTransaction, serverTimestamp, onDisconnect } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-database.js";
-        import { TOOL_KINDS, renderToolCard, applyToolAction, parseToolResponse, isToolRequest, buildToolPrompt, isImageRequest, buildImageQueryPrompt, detectRequestKind, buildMediaQueryPrompt, parseMediaPlan, wantsMultipleResults, buildFilePrompt, parseFileResponse, mountToolTimers, clearToolTimers, mountToolCanvases, clearToolCanvases } from './naz-tools.js?v=29';
+        import { TOOL_KINDS, renderToolCard, applyToolAction, parseToolResponse, isToolRequest, buildToolPrompt, isImageRequest, buildImageQueryPrompt, detectRequestKind, buildMediaQueryPrompt, parseMediaPlan, wantsMultipleResults, buildFilePrompt, parseFileResponse, mountToolTimers, clearToolTimers, mountToolCanvases, clearToolCanvases } from './naz-tools.js?v=30';
 
         // ============================================
         // 🔐 Security Utilities
@@ -113,13 +113,17 @@ import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebas
             </div>`;
         }
         const SOCIAL_RULES = [
-            { platform: 'tiktok', words: /(?:^|[\s،,.!؟:"'(\[])(?:تيك(?:\s?توك)?|تكتوك|tik\s?tok|tiktok|tik-tok)(?:$|[\s،,.!؟:"')\]])/iu, label: 'تيك توك', icon: 'fa-music' },
-            { platform: 'instagram', words: /(?:^|[\s،,.!؟:"'(\[])(?:انستا|إنستا|انستغرام|إنستغرام|انستكرام|instagram|insta|ig)(?:$|[\s،,.!؟:"')\]])/iu, label: 'انستغرام', icon: 'fa-camera' }
+            { platform: 'tiktok', words: /(?:^|[\s،,.!؟:"'(\[])(?:تيك(?:\s?-?\s?توك)?|تكتوك|تيكتوك|tik\s?-?\s?tok|tiktok)(?:$|[\s،,.!؟:"')\]])/iu, label: 'تيك توك', icon: 'fa-music' },
+            { platform: 'instagram', words: /(?:^|[\s،,.!؟:"'(\[])(?:[اأإآ]?نست[غجكق]?[ر]?ام|[اأإآ]?نستا|instagram|insta|ig)(?:$|[\s،,.!؟:"')\]])/iu, label: 'انستغرام', icon: 'fa-camera' }
         ];
         function detectSocialRequest(text) {
             const value = String(text || '').trim();
             if (!value || value.length > 240) return null;
-            const rule = SOCIAL_RULES.find(item => item.words.test(value));
+            let rule = SOCIAL_RULES.find(item => item.words.test(value));
+            const bareHandle = value.replace(/@(?:naz|ناز)/giu, ' ').match(/@([A-Za-z0-9._]{2,30})/);
+            if (!rule && bareHandle) {
+                return { platform: 'auto', label: 'تيك توك أو انستغرام', user: bareHandle[1].replace(/^@+/, '').replace(/[.]+$/, ''), action: 'profile' };
+            }
             if (!rule) return null;
             const cleaned = value.replace(/@(?:naz|ناز)/giu, ' ');
             const reserved = ['p', 'reel', 'reels', 'tv', 'explore', 'search', 'video', 'stories', 'accounts', 'about', 'direct', 'web', 'discover'];
@@ -135,7 +139,7 @@ import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebas
             if (searchVerb) {
                 const query = cleaned
                     .replace(rule.words, ' ')
-                    .replace(/(ابحث|أبحث|ابحثي|بحث|دور|فتش|لقيلي|جيبلي|جيب|هات|وريني|معلومات|أريد|اريد|عن|في|على|داخل|search|find|info)/giu, ' ')
+                    .replace(/(ابحث|أبحث|ابحثي|بحث|دور|فتش|لقيلي|جيبلي|جيب|هات|وريني|معلومات|أريد|اريد|عن|في|على|داخل|ناز|@?naz|search|find|info)/giu, ' ')
                     .replace(/\s+/g, ' ')
                     .trim()
                     .slice(0, 80);
@@ -2619,45 +2623,54 @@ import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebas
             if (socialRequest) {
                 try {
                     if (socialRequest.action === 'profile') {
-                        showNotification(`NAZ تدوّر حساب ${socialRequest.label}... 🔍`);
-                        const profile = await fetchSocialProfile(socialRequest.platform, socialRequest.user);
-                        if (profile) {
+                        const chain = socialRequest.platform === 'auto'
+                            ? [{ p: 'tiktok', l: 'تيك توك' }, { p: 'instagram', l: 'انستغرام' }]
+                            : [{ p: socialRequest.platform, l: socialRequest.label }];
+                        showNotification(`NAZ تدوّر @${socialRequest.user}... 🔍`);
+                        for (const target of chain) {
+                            const profile = await fetchSocialProfile(target.p, socialRequest.user);
+                            if (!profile) continue;
                             await push(ref(db, 'messages'), {
                                 uid: 'naz_ai',
                                 name: aiName,
                                 txt: '',
                                 time: serverTimestamp(),
                                 avatar: aiAvatar,
-                                caption: `معلومات حساب ${socialRequest.label}: @${socialRequest.user}`.slice(0, 160),
+                                caption: `معلومات حساب ${target.l}: @${socialRequest.user}`.slice(0, 160),
                                 profile,
                                 reply: { name: safeUserName, txt: safeUserMessage.slice(0, 120) }
                             });
-                            showNotification(`✅ ناز جابت معلومات @${socialRequest.user}`);
+                            showNotification(`✅ ناز جابت معلومات @${socialRequest.user} من ${target.l}`);
                             return;
                         }
-                        const barUrl = socialRequest.platform === 'instagram'
+                        const primary = chain[0];
+                        const label = socialRequest.platform === 'auto' ? 'تيك توك أو انستغرام' : primary.l;
+                        const barUrl = primary.p === 'instagram'
                             ? `https://www.instagram.com/${encodeURIComponent(socialRequest.user)}/`
                             : `https://www.tiktok.com/@${encodeURIComponent(socialRequest.user)}`;
-                        const lookupError = (window.__nazLastSocialError || '') + '';
-                        const blocked = lookupError.indexOf('blocked') !== -1;
-                        const embedUrl = socialRequest.platform === 'instagram'
+                        const embedUrl = primary.p === 'instagram'
                             ? `https://www.instagram.com/${encodeURIComponent(socialRequest.user)}/embed/`
                             : `https://www.tiktok.com/embed/@${encodeURIComponent(socialRequest.user)}`;
+                        const blocked = ((window.__nazLastSocialError || '') + '').indexOf('blocked') !== -1;
                         const fbMessage = {
                             uid: 'naz_ai',
                             name: aiName,
                             txt: blocked
                                 ? ''
-                                : `ما لقيت حساب @${socialRequest.user} على ${socialRequest.label} — تأكد من اليوزر. جرّب تكتبه بدون @ أو أرسل رابط الحساب.`,
-                            embed: blocked ? { platform: socialRequest.platform, user: socialRequest.user, url: embedUrl, link: barUrl } : undefined,
+                                : `ما لقيت حساب @${socialRequest.user} على ${label} — تأكد من اليوزر. جرّب تكتبه بدون @ أو أرسل رابط الحساب.`,
                             time: serverTimestamp(),
                             avatar: aiAvatar,
                             reply: { name: safeUserName, txt: safeUserMessage.slice(0, 120) }
                         };
-                        if (!blocked) delete fbMessage.embed;
+                        if (blocked) {
+                            fbMessage.embed = { platform: primary.p, user: socialRequest.user, url: embedUrl, link: barUrl };
+                            fbMessage.caption = `@${socialRequest.user} · ${primary.l}`.slice(0, 160);
+                            await push(ref(db, 'messages'), fbMessage);
+                            showNotification(`✅ فتحت حساب @${socialRequest.user} داخل الدردشة`);
+                            return;
+                        }
                         try {
-                            if (blocked) { await push(ref(db, 'messages'), fbMessage); showNotification(`✅ فتحت حساب @${socialRequest.user} داخل الدردشة`); return; }
-                            const alt = await runSearch(`${socialRequest.user} ${socialRequest.label}`, 'web', 1);
+                            const alt = await runSearch(`${socialRequest.user} ${label}`, 'web', 1);
                             if (alt.items.length) {
                                 fbMessage.txt = '';
                                 fbMessage.web = {
@@ -2665,17 +2678,18 @@ import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebas
                                     items: alt.items.slice(0, 5),
                                     query: socialRequest.user,
                                     extraLink: barUrl,
-                                    extraLabel: `فتح ${socialRequest.label}`
+                                    extraLabel: `فتح ${primary.l}`
                                 };
-                                fbMessage.caption = `عن @${socialRequest.user} · ${socialRequest.label}`.slice(0, 160);
+                                fbMessage.caption = `عن @${socialRequest.user} · ${label}`.slice(0, 160);
                             }
                         } catch (altError) {
                             console.warn('Social fallback search failed:', altError);
                         }
                         await push(ref(db, 'messages'), fbMessage);
-                        showNotification('⚠️ المنصة حجبت الجلب، أرسلت بدائل + الرابط');
+                        showNotification(`⚠️ ما لقيت @${socialRequest.user}`);
                         return;
                     }
+                    if (!socialRequest.query) { showNotification('⚠️ اكتب كلمة للبحث أو اليوزر مع @'); return; }
                     const platformSearchUrl = socialRequest.platform === 'instagram'
                         ? `https://www.instagram.com/explore/search/keyword/?q=${encodeURIComponent(socialRequest.query)}`
                         : `https://www.tiktok.com/search?q=${encodeURIComponent(socialRequest.query)}`;
