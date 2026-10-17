@@ -1,7 +1,7 @@
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js";
         import { getAnalytics } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-analytics.js";
         import { getDatabase, ref, set, get, push, onValue, query, limitToLast, remove, update, runTransaction, serverTimestamp, onDisconnect } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-database.js";
-        import { TOOL_KINDS, renderToolCard, applyToolAction, parseToolResponse, isToolRequest, buildToolPrompt, isImageRequest, buildImageQueryPrompt, detectRequestKind, buildMediaQueryPrompt, parseMediaPlan, wantsMultipleResults, buildFilePrompt, parseFileResponse, mountToolTimers, clearToolTimers, mountToolCanvases, clearToolCanvases } from './naz-tools.js?v=17';
+        import { TOOL_KINDS, renderToolCard, applyToolAction, parseToolResponse, isToolRequest, buildToolPrompt, isImageRequest, buildImageQueryPrompt, detectRequestKind, buildMediaQueryPrompt, parseMediaPlan, wantsMultipleResults, buildFilePrompt, parseFileResponse, mountToolTimers, clearToolTimers, mountToolCanvases, clearToolCanvases } from './naz-tools.js?v=18';
 
         // ============================================
         // 🔐 Security Utilities
@@ -311,15 +311,16 @@ import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebas
         // ✅ إعدادات Firebase - تم ملؤها بمعلوماتك
         // ============================================
         // 🔐 معلومات فايربيس تُجلب من Cloudflare Worker عند توفّر رابطه، وهذا المضمّن احتياطي فقط.
+        // ما بقى أي مفتاح أو رابط فايربيس داخل المستودع — كله يجي من Cloudflare Worker.
         const firebaseConfigFallback = {
-            apiKey: "AIzaSyBvGWF0u83mrdtBTLWgGV-ExuO6-4j-1Xk",
-            authDomain: "reza-3d325.firebaseapp.com",
-            databaseURL: "https://reza-3d325-default-rtdb.europe-west1.firebasedatabase.app",
-            projectId: "reza-3d325",
-            storageBucket: "reza-3d325.firebasestorage.app",
-            messagingSenderId: "454599070550",
-            appId: "1:454599070550:web:48f519a98dcf302bbe3cf7",
-            measurementId: "G-Z6951JPFL2"
+            apiKey: "",
+            authDomain: "",
+            databaseURL: "",
+            projectId: "",
+            storageBucket: "",
+            messagingSenderId: "",
+            appId: "",
+            measurementId: ""
         };
         let firebaseConfig = { ...firebaseConfigFallback };
         const CLOUD_API_CACHE_KEY = 'reza_cloud_api_url';
@@ -434,6 +435,10 @@ import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebas
             if (isFirebaseReady) return true;
             try {
                 await loadCloudFirebaseConfig();
+                if (!firebaseConfig.apiKey || !firebaseConfig.databaseURL || !firebaseConfig.projectId) {
+                    showError('☁️ تعذّر جلب إعدادات الاتصال من الكلاود. تأكد من الرابط السحابي ثم أعد المحاولة.');
+                    return false;
+                }
                 Object.freeze(firebaseConfig);
                 app = initializeApp(firebaseConfig);
                 db = getDatabase(app);
