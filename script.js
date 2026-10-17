@@ -1,7 +1,7 @@
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js";
         import { getAnalytics } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-analytics.js";
         import { getDatabase, ref, set, get, push, onValue, query, limitToLast, remove, update, runTransaction, serverTimestamp, onDisconnect } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-database.js";
-        import { TOOL_KINDS, renderToolCard, applyToolAction, parseToolResponse, isToolRequest, buildToolPrompt, isImageRequest, buildImageQueryPrompt, detectRequestKind, buildMediaQueryPrompt, parseMediaPlan, wantsMultipleResults, buildFilePrompt, parseFileResponse, mountToolTimers, clearToolTimers, mountToolCanvases, clearToolCanvases } from './naz-tools.js?v=27';
+        import { TOOL_KINDS, renderToolCard, applyToolAction, parseToolResponse, isToolRequest, buildToolPrompt, isImageRequest, buildImageQueryPrompt, detectRequestKind, buildMediaQueryPrompt, parseMediaPlan, wantsMultipleResults, buildFilePrompt, parseFileResponse, mountToolTimers, clearToolTimers, mountToolCanvases, clearToolCanvases } from './naz-tools.js?v=28';
 
         // ============================================
         // 🔐 Security Utilities
@@ -130,12 +130,12 @@ import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebas
                 : (cleaned.match(/@([A-Za-z0-9._]{2,30})/)
                     || cleaned.match(/(?:يوزر|حساب|بروفايل|profile|username|user)\s*[:=]?\s*@?([A-Za-z0-9._]{2,30})/iu));
             const user = handle ? handle[1].replace(/^@+/, '').replace(/[.]+$/, '') : '';
-            const searchVerb = /(ابحث|أبحث|ابحثي|بحث|دور|فتش|لقيلي|جيبلي|search|find)/iu.test(value);
+            const searchVerb = /(ابحث|أبحث|ابحثي|بحث|دور|فتش|لقيلي|جيبلي|جيب|هات|وريني|معلومات|أريد|اريد|search|find|info)/iu.test(value);
             if (user) return { platform: rule.platform, label: rule.label, user, action: 'profile' };
             if (searchVerb) {
                 const query = cleaned
                     .replace(rule.words, ' ')
-                    .replace(/(ابحث|أبحث|ابحثي|بحث|دور|فتش|لقيلي|جيبلي|عن|في|على|داخل|search|find)/giu, ' ')
+                    .replace(/(ابحث|أبحث|ابحثي|بحث|دور|فتش|لقيلي|جيبلي|جيب|هات|وريني|معلومات|أريد|اريد|عن|في|على|داخل|search|find|info)/giu, ' ')
                     .replace(/\s+/g, ' ')
                     .trim()
                     .slice(0, 80);
