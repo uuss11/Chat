@@ -13,6 +13,24 @@ const clampNumber = (value, min, max, fallback) => {
 
 const cleanText = (value, maxLength) => String(value ?? '').replace(/\s+/g, ' ').trim().slice(0, maxLength);
 
+const formatValue = value => {
+    if (Array.isArray(value)) return value.join('، ');
+    if (typeof value === 'boolean') return value ? 'مفعّل' : 'مطفأ';
+    return String(value ?? '');
+};
+
+const CUSTOM_CONTROL_TYPES = ['display', 'progress', 'button', 'slider', 'toggle', 'input', 'note', 'list', 'timer'];
+const CUSTOM_OP_TYPES = ['add', 'sub', 'set', 'toggle', 'clear', 'pop', 'push', 'random', 'reset'];
+
+function defaultControlValue(control) {
+    if (control.type === 'list') return [];
+    if (control.type === 'toggle') return false;
+    if (control.type === 'input' || control.type === 'note' || control.type === 'display') return '';
+    if (control.type === 'timer') return clampNumber(control.seconds, 5, 7200, 60);
+    if (control.type === 'slider') return clampNumber(control.min, -1e6, 1e6, 0);
+    return 0;
+}
+
 /* ---------- safe calculator ---------- */
 
 function tokenizeExpression(source) {
@@ -328,6 +346,70 @@ export const TOOL_KINDS = {
                     <button type="button" class="tool-key" data-tool-action="reset">لعبة جديدة</button>
                 </div>`;
         }
+    },
+    custom: {
+        label: 'أداة مخصصة',
+        icon: 'fa-wand-magic-sparkles',
+        defaults: () => ({ controls: [], options: [] }),
+        state: config => {
+            const values = {};
+            (config?.controls || []).forEach(control => {
+                if (control.key) values[control.key] = defaultControlValue(control);
+            });
+            return { ...values, ...(config?.initial && typeof config.initial === 'object' ? config.initial : {}) };
+        },
+        actions: ['custom'],
+        render(config, state, ctx) {
+            const controls = Array.isArray(config?.controls) ? config.controls : [];
+            if (!controls.length) return '<div class="tool-empty">الأداة بلا مكوّنات.</div>';
+            const parts = [];
+            let buttonRow = [];
+            const flush = () => {
+                if (buttonRow.length) {
+                    parts.push(`<div class="tool-row">${buttonRow.join('')}</div>`);
+                    buttonRow = [];
+                }
+            };
+            controls.forEach((control, index) => {
+                const value = state?.[control.key];
+                if (control.type === 'button') {
+                    buttonRow.push(`<button type="button" class="tool-key ${control.op?.type === 'reset' ? 'tool-key-warn' : 'tool-key-primary'}" data-tool-action="custom" data-tool-value="${index}">${esc(control.label || 'زر')}</button>`);
+                    return;
+                }
+                flush();
+                if (control.type === 'display') {
+                    parts.push(`<div class="tool-custom-display"><span>${esc(control.label)}</span><strong>${esc(formatValue(value))}${control.suffix ? esc(control.suffix) : ''}</strong></div>`);
+                } else if (control.type === 'progress') {
+                    const max = clampNumber(control.max, 1, 1e6, 100);
+                    const percent = Math.min(100, Math.max(0, Math.round((Number(value) || 0) / max * 100)));
+                    parts.push(`<div class="tool-custom-progress"><span class="bar" style="width:${percent}%"></span><span class="text">${esc(control.label)} · ${percent}%</span></div>`);
+                } else if (control.type === 'list') {
+                    const items = Array.isArray(value) ? value : [];
+                    parts.push(`<div class="tool-list">${items.length
+                        ? items.map((item, itemIndex) => `<div class="tool-list-item"><span class="tool-list-text">${esc(item)}</span><button type="button" class="tool-list-remove" data-tool-action="custom" data-tool-value="${index}" data-tool-mode="list-remove" data-tool-item="${itemIndex}" aria-label="حذف">×</button></div>`).join('')
+                        : '<div class="tool-empty">لا عناصر بعد.</div>'}</div>`);
+                    parts.push(`<div class="tool-row"><input type="text" class="tool-input" data-tool-input="custom.${esc(control.key)}" placeholder="${esc(control.placeholder || 'عنصر جديد')}" maxlength="120"><button type="button" class="tool-key tool-key-primary" data-tool-action="custom" data-tool-value="${index}" data-tool-field="custom.${esc(control.key)}" data-tool-mode="push">إضافة</button></div>`);
+                } else if (control.type === 'input') {
+                    parts.push(`<div class="tool-row"><input type="text" class="tool-input" data-tool-input="custom.${esc(control.key)}" value="${esc(value ?? '')}" placeholder="${esc(control.placeholder || control.label)}" maxlength="300"><button type="button" class="tool-key tool-key-primary" data-tool-action="custom" data-tool-value="${index}" data-tool-field="custom.${esc(control.key)}">حفظ</button></div>`);
+                } else if (control.type === 'note') {
+                    parts.push(`<textarea class="tool-textarea" rows="3" data-tool-input="custom.${esc(control.key)}" maxlength="1000" placeholder="${esc(control.placeholder || control.label)}">${esc(value ?? '')}</textarea>`);
+                    parts.push(`<div class="tool-row tool-row-end"><button type="button" class="tool-key tool-key-primary" data-tool-action="custom" data-tool-value="${index}" data-tool-field="custom.${esc(control.key)}">حفظ</button></div>`);
+                } else if (control.type === 'slider') {
+                    const min = clampNumber(control.min, -1e6, 1e6, 0);
+                    const max = clampNumber(control.max, min + 1, 1e6, 10);
+                    parts.push(`<div class="tool-custom-slider"><span>${esc(control.label)} <b>${esc(formatValue(value))}</b></span><input type="range" min="${min}" max="${max}" step="${clampNumber(control.step, 0.01, 1000, 1)}" value="${clampNumber(value, min, max, min)}" data-tool-input="custom.${esc(control.key)}"><button type="button" class="tool-key tool-key-primary" data-tool-action="custom" data-tool-value="${index}" data-tool-field="custom.${esc(control.key)}">تعيين</button></div>`);
+                } else if (control.type === 'toggle') {
+                    buttonRow.push(`<button type="button" class="tool-key ${value ? 'tool-key-primary' : ''}" data-tool-action="custom" data-tool-value="${index}" aria-pressed="${value ? 'true' : 'false'}">${esc(control.label)}: ${value ? 'مفعّل' : 'مطفأ'}</button>`);
+                } else if (control.type === 'timer') {
+                    const endsAt = Number(state?.[`${control.key}__ends`]) || 0;
+                    const seconds = endsAt ? Math.max(0, Math.round((endsAt - Date.now()) / 1000)) : clampNumber(value, 5, 7200, 60);
+                    const clock = `${String(Math.floor(seconds / 60)).padStart(2, '0')}:${String(seconds % 60).padStart(2, '0')}`;
+                    parts.push(`<div class="tool-timer" data-tool-timer data-ends="${endsAt || ''}"><div class="tool-timer-display">${clock}</div><div class="tool-row"><button type="button" class="tool-key tool-key-primary" data-tool-action="custom" data-tool-value="${index}" data-tool-mode="timer-start">تشغيل</button><button type="button" class="tool-key" data-tool-action="custom" data-tool-value="${index}" data-tool-mode="timer-reset">إعادة</button></div></div>`);
+                }
+            });
+            flush();
+            return `${config?.intro ? `<div class="tool-custom-intro">${esc(config.intro)}</div>` : ''}${parts.join('')}`;
+        }
     }
 };
 
@@ -355,6 +437,49 @@ export function normalizeToolSpec(spec) {
     if (Array.isArray(rawConfig.items)) {
         config.items = rawConfig.items.map(item => cleanText(item, 120)).filter(Boolean).slice(0, 20);
     }
+    if (kind === 'custom') {
+        const controls = [];
+        const rawControls = Array.isArray(rawConfig.controls) ? rawConfig.controls.slice(0, 12) : [];
+        rawControls.forEach((raw, position) => {
+            if (!raw || typeof raw !== 'object') return;
+            const type = CUSTOM_CONTROL_TYPES.includes(raw.type) ? raw.type : null;
+            if (!type) return;
+            const key = cleanText(raw.key, 24).replace(/[^A-Za-z0-9_]/g, '') || `field${position}`;
+            const control = { type, key, label: cleanText(raw.label, 40) || key };
+            if (type === 'button') {
+                const rawOp = raw.op && typeof raw.op === 'object' ? raw.op : {};
+                const opType = CUSTOM_OP_TYPES.includes(rawOp.type) ? rawOp.type : 'set';
+                control.op = { type: opType };
+                if (rawOp.key) control.op.key = cleanText(rawOp.key, 24).replace(/[^A-Za-z0-9_]/g, '');
+                if (rawOp.from) control.op.from = cleanText(rawOp.from, 24).replace(/[^A-Za-z0-9_]/g, '');
+                if (typeof rawOp.value === 'number') control.op.value = clampNumber(rawOp.value, -1e6, 1e6, 0);
+                else if (typeof rawOp.value === 'boolean') control.op.value = rawOp.value;
+                else if (typeof rawOp.value === 'string') control.op.value = rawOp.value.slice(0, 200);
+            }
+            if (type === 'slider') {
+                control.min = clampNumber(raw.min, -1e6, 1e6, 0);
+                control.max = clampNumber(raw.max, control.min + 1, 1e6, control.min + 10);
+                control.step = clampNumber(raw.step, 0.01, 1000, 1);
+            }
+            if (type === 'progress') control.max = clampNumber(raw.max, 1, 1e6, 100);
+            if (type === 'timer') control.seconds = clampNumber(raw.seconds, 5, 7200, 60);
+            if (type === 'input' || type === 'note') control.placeholder = cleanText(raw.placeholder, 60);
+            if (typeof raw.suffix === 'string') control.suffix = cleanText(raw.suffix, 12);
+            controls.push(control);
+        });
+        if (!controls.length) return null;
+        config.controls = controls;
+        if (rawConfig.initial && typeof rawConfig.initial === 'object') {
+            const initial = {};
+            Object.entries(rawConfig.initial).slice(0, 20).forEach(([key, value]) => {
+                const cleanKey = cleanText(key, 24).replace(/[^A-Za-z0-9_]/g, '');
+                if (!cleanKey || (typeof value === 'object' && value !== null)) return;
+                if (!controls.some(control => control.key === cleanKey)) return;
+                initial[cleanKey] = typeof value === 'boolean' ? value : Number.isFinite(Number(value)) && value !== '' ? Number(value) : String(value).slice(0, 300);
+            });
+            config.initial = initial;
+        }
+    }
     const title = cleanText(spec.title || config.title || config.label || definition.label, 60) || definition.label;
     return { kind, title, config };
 }
@@ -363,10 +488,29 @@ export function isToolRequest(text) {
     const value = String(text || '');
     if (!value) return false;
     const toolWords = /(أداة|اداة|آلة|الة|widget|أداة تفاعلية|أدوات)/iu;
-    const buildWords = /(سوي|سوّي|اعمل|إعمل|اعملي|اصنع|صمم|صمّمي|انشئ|أنشئ|ضيف|أضف|اريد|أريد|محتاج|ابغى|أبغى|خلّي|خلي|قدم|قدّم)/iu;
+    const buildWords = /(سوي|سوّي|اعمل|إعمل|اعملي|اصنع|صمم|صمّمي|انشئ|أنشئ|ضيف|أضف|اريد|أريد|محتاج|ابغى|أبغى|خلّي|خلي|قدم|قدّم|ركب|سوولي|سويلي|اعمليلي|ابني)/iu;
     const kinds = /(حاسبة|حاسبه|آلة حاسبة|عدّاد|عداد|مؤقت|مؤقّت|تايمر|تصويت|استفتاء|قائمة|تشيك ليست|مهام|ملاحظات|نوت|نرد|زهر|قرعة|محوّل|محول|تحويل وحدات|إكس|اكس او|تيك تاك تو|x-o|لعبة)/iu;
     if (toolWords.test(value) && (buildWords.test(value) || kinds.test(value))) return true;
     return buildWords.test(value) && kinds.test(value);
+}
+
+export function isImageRequest(text) {
+    const value = String(text || '');
+    if (!value) return false;
+    const imageWords = /(صورة|صوره|صور|رسمة|رسمه|شعار|لوجو|خلفية|خلفيه|بوستر|ملصق|ستيكر|ايموجي|image|photo|picture|png|jpg|jpeg|webp)/iu;
+    if (!imageWords.test(value)) return false;
+    if (isToolRequest(value)) return false;
+    const intent = /(ارسل|أرسل|ابعث|ابعت|هات|جيب|جيبلي|وريني|ورّيني|دور|دوّر|ابحث|لقي|لاقي|احتاج|محتاج|اريد|أريد|ابغى|أبغى|search|find|send|show|need|want)/iu;
+    return intent.test(value) || value.trim().length <= 40;
+}
+
+export function buildImageQueryPrompt(userMessage, userName) {
+    return `المستخدم ${userName} طلب صورة: "${userMessage}"
+اكتب من 1 إلى 3 عبارات بحث قصيرة (كلمتين إلى أربع كلمات) للعثور على الصورة المناسبة في مكتبة Wikimedia Commons.
+- فضّل الإنجليزية للدقة، وأضف عبارة عربية واحدة إذا كانت مناسبة للموضوع.
+- لا تكتب روابط، فقط عبارات بحث.
+أجب بـ JSON فقط بهذا الشكل وبلا أي نص إضافي:
+{"queries":["short english query","عبارة عربية"],"caption":"جملة قصيرة باللهجة العراقية تصف الصورة"}`;
 }
 
 export function buildToolPrompt(userMessage, userName, moodLabel) {
@@ -374,7 +518,7 @@ export function buildToolPrompt(userMessage, userName, moodLabel) {
     return `المستخدم ${userName} طلب أداة تفاعلية داخل الدردشة: "${userMessage}"
 مزاجك الحالي ${moodLabel}.
 
-اختر أنسب أداة من هذه الأنواع فقط: ${catalogue}.
+اختر أنسب أداة من هذه الأنواع: ${catalogue}.
 - حاسبة: config {} — آلة حاسبة بضغطة أزرار.
 - عدّاد: config {label, step} — عدّاد بزيادة ونقصان.
 - مؤقت: config {seconds} — مؤقّت تنازلي بالثواني.
@@ -385,6 +529,20 @@ export function buildToolPrompt(userMessage, userName, moodLabel) {
 - قرعة: config {title, options:[..]} — سحب عشوائي بين خيارات.
 - محوّل وحدات: config {category} حيث category إما length أو mass أو temp.
 - إكس-أو: config {} — لعبة إكس-أو بلوح مشترك.
+
+وإذا كان الطلب أي شيء آخر غير ما فوق، استخدم النوع custom وابنِ الأداة من المكوّنات التالية داخل config.controls (حتى 12 مكوّناً):
+- {"type":"display","key":"score","label":"النقاط","suffix":" نقطة"} — عرض قيمة.
+- {"type":"progress","key":"score","label":"التقدم","max":100} — شريط تقدم.
+- {"type":"button","label":"+1","op":{"type":"add","key":"score","value":1}} — زر ينفّذ عملية.
+  أنواع العمليات: add, sub, set, toggle, clear, pop, push, random, reset.
+- {"type":"slider","key":"level","label":"المستوى","min":1,"max":10,"step":1} — شريحة قيمة.
+- {"type":"toggle","key":"on","label":"التشغيل"} — زر تبديل.
+- {"type":"input","key":"name","label":"الاسم"} — حقل نصي.
+- {"type":"note","key":"note","label":"ملاحظة"} — مساحة نص طويل.
+- {"type":"list","key":"items","label":"بنود"} — قائمة عناصر.
+- {"type":"timer","key":"t","seconds":60} — مؤقّت.
+ويمكن أن تحمل config حقولاً إضافية: "intro" وصف قصير، و"options" قائمة خيارات، و"initial" قيم ابتدائية مثل {"score":0}.
+كل مكوّن يجب أن يملك key بالإنجليزية بدون مسافات.
 
 أجب بـ JSON فقط بهذا الشكل وبلا أي نص إضافي:
 {"kind":"نوع الأداة","title":"عنوان قصير بالعربية","caption":"جملة قصيرة تخبرهم أن الأداة جاهزة","config":{...}}`;
@@ -575,6 +733,129 @@ export function applyToolAction(kind, config, currentState, action, payload, ctx
         }
     }
 
+    if (kind === 'custom') {
+        if (action !== 'custom') return null;
+        const controls = Array.isArray(config?.controls) ? config.controls : [];
+        const index = Number(payload?.value);
+        const control = controls[index];
+        if (!control || !control.key) return null;
+        const mode = payload?.mode || '';
+        const next = { ...state };
+        const field = payload?.fields?.[`custom.${control.key}`];
+
+        if (mode === 'list-remove') {
+            const items = Array.isArray(state[control.key]) ? state[control.key].slice() : [];
+            const itemIndex = Number(payload?.item);
+            if (itemIndex < 0 || itemIndex >= items.length) return null;
+            items.splice(itemIndex, 1);
+            next[control.key] = items;
+            next.updatedBy = name;
+            return next;
+        }
+
+        if (mode === 'timer-start') {
+            const seconds = clampNumber(state[control.key], 5, 7200, 60);
+            next[control.key] = seconds;
+            next[`${control.key}__ends`] = Date.now() + seconds * 1000;
+            next.updatedBy = name;
+            return next;
+        }
+
+        if (mode === 'timer-reset') {
+            next[control.key] = clampNumber(control.seconds, 5, 7200, 60);
+            next[`${control.key}__ends`] = 0;
+            next.updatedBy = name;
+            return next;
+        }
+
+        if (control.type === 'slider') {
+            const min = clampNumber(control.min, -1e6, 1e6, 0);
+            const max = clampNumber(control.max, min + 1, 1e6, 10);
+            const updated = clampNumber(field, min, max, min);
+            if (updated === state[control.key]) return null;
+            next[control.key] = updated;
+            next.updatedBy = name;
+            return next;
+        }
+
+        if (control.type === 'input' || control.type === 'note') {
+            const updated = String(field ?? '').slice(0, 1000);
+            if (updated === (state[control.key] || '')) return null;
+            next[control.key] = updated;
+            next.updatedBy = name;
+            return next;
+        }
+
+        if (control.type === 'toggle') {
+            next[control.key] = !state[control.key];
+            next.updatedBy = name;
+            return next;
+        }
+
+        if (control.type === 'list') {
+            const text = cleanText(field, 120);
+            const items = Array.isArray(state[control.key]) ? state[control.key].slice() : [];
+            if (mode === 'push' || !mode) {
+                if (!text || items.length >= 50) return null;
+                items.push(text);
+                next[control.key] = items;
+                next.updatedBy = name;
+                return next;
+            }
+            return null;
+        }
+
+        if (control.type === 'button') {
+            const op = control.op && typeof control.op === 'object' ? control.op : { type: 'set' };
+            const key = op.key || control.key;
+            switch (op.type) {
+                case 'add':
+                    next[key] = clampNumber(state[key], -1e9, 1e9, 0) + clampNumber(op.value, -1e6, 1e6, 1);
+                    break;
+                case 'sub':
+                    next[key] = clampNumber(state[key], -1e9, 1e9, 0) - clampNumber(op.value, -1e6, 1e6, 1);
+                    break;
+                case 'set':
+                    if (typeof op.value === 'boolean') next[key] = op.value;
+                    else if (Number.isFinite(Number(op.value)) && op.value !== '') next[key] = Number(op.value);
+                    else next[key] = String(op.value ?? '').slice(0, 300);
+                    break;
+                case 'toggle':
+                    next[key] = !state[key];
+                    break;
+                case 'clear':
+                    next[key] = Array.isArray(state[key]) ? [] : typeof state[key] === 'boolean' ? false : '';
+                    break;
+                case 'pop':
+                    next[key] = Array.isArray(state[key]) ? state[key].slice(0, -1) : [];
+                    break;
+                case 'push': {
+                    const text = cleanText(payload?.text ?? field, 200);
+                    if (!text) return null;
+                    next[key] = [...(Array.isArray(state[key]) ? state[key] : []), text].slice(0, 50);
+                    break;
+                }
+                case 'random': {
+                    const pool = Array.isArray(state[op.from]) ? state[op.from] : (Array.isArray(config?.options) ? config.options : []);
+                    if (!pool.length) return null;
+                    next[key] = String(pool[Math.floor(Math.random() * pool.length)]);
+                    break;
+                }
+                case 'reset': {
+                    const fresh = TOOL_KINDS.custom.state(config);
+                    fresh.updatedBy = name;
+                    return fresh;
+                }
+                default:
+                    return null;
+            }
+            next.updatedBy = name;
+            return next;
+        }
+
+        return null;
+    }
+
     return null;
 }
 
@@ -591,6 +872,7 @@ export function renderToolCard(msgKey, tool, state, ctx) {
                 <span class="tool-card-icon"><i class="fas ${definition.icon}"></i></span>
                 <span class="tool-card-title">${esc(tool.title || definition.label)}</span>
                 <span class="tool-card-kind">${esc(definition.label)}</span>
+                <button type="button" class="tool-card-menu" data-tool-menu aria-label="خيارات الرسالة"><i class="fas fa-ellipsis"></i></button>
             </div>
             <div class="tool-card-body">${definition.render(tool.config || {}, currentState, ctx || {})}</div>
             ${updatedBy ? `<div class="tool-card-foot">آخر تحديث من ${esc(updatedBy)}</div>` : ''}
