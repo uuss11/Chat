@@ -1,7 +1,7 @@
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js";
         import { getAnalytics } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-analytics.js";
         import { getDatabase, ref, set, get, push, onValue, query, limitToLast, remove, update, runTransaction, serverTimestamp, onDisconnect } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-database.js";
-        import { TOOL_KINDS, renderToolCard, applyToolAction, parseToolResponse, isToolRequest, buildToolPrompt, isImageRequest, buildImageQueryPrompt, detectRequestKind, buildMediaQueryPrompt, parseMediaPlan, wantsMultipleResults, buildFilePrompt, parseFileResponse, mountToolTimers, clearToolTimers, mountToolCanvases, clearToolCanvases } from './naz-tools.js?v=10';
+        import { TOOL_KINDS, renderToolCard, applyToolAction, parseToolResponse, isToolRequest, buildToolPrompt, isImageRequest, buildImageQueryPrompt, detectRequestKind, buildMediaQueryPrompt, parseMediaPlan, wantsMultipleResults, buildFilePrompt, parseFileResponse, mountToolTimers, clearToolTimers, mountToolCanvases, clearToolCanvases } from './naz-tools.js?v=11';
 
         // ============================================
         // 🔐 Security Utilities
@@ -1535,6 +1535,7 @@ import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebas
                     candidates.push({
                         url: safe,
                         title: result.title || '',
+                        durationMs: Number(result.duration) || 0,
                         weight: ['cc0', 'pdm', 'by'].includes(licence) ? 0 : 1
                     });
                 });
@@ -1644,10 +1645,14 @@ import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebas
                 push(await searchCommonsMedia(queries, 'video'));
             }
             const primary = queries[0] || '';
-            return pool
+            const ranked = pool
                 .map(item => ({ ...item, score: scoreMatch(`${item.title || ''} ${item.url || ''}`, primary) }))
-                .sort((a, b) => b.score - a.score || (a.weight || 0) - (b.weight || 0))
-                .slice(0, limit);
+                .sort((a, b) => b.score - a.score || (a.weight || 0) - (b.weight || 0));
+            if (kind === 'audio') {
+                const fullLength = ranked.filter(item => !item.durationMs || item.durationMs >= 15000);
+                return (fullLength.length >= 3 ? fullLength : ranked).slice(0, limit);
+            }
+            return ranked.slice(0, limit);
         }
 
         async function searchCommonsImageCandidates(queries) {
