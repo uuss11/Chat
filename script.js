@@ -1,7 +1,7 @@
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js";
         import { getAnalytics } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-analytics.js";
         import { getDatabase, ref, set, get, push, onValue, query, limitToLast, remove, update, runTransaction, serverTimestamp, onDisconnect } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-database.js";
-        import { TOOL_KINDS, renderToolCard, applyToolAction, parseToolResponse, isToolRequest, buildToolPrompt, isImageRequest, buildImageQueryPrompt, detectRequestKind, buildMediaQueryPrompt, parseMediaPlan, wantsMultipleResults, buildFilePrompt, parseFileResponse, mountToolTimers, clearToolTimers, mountToolCanvases, clearToolCanvases } from './naz-tools.js?v=25';
+        import { TOOL_KINDS, renderToolCard, applyToolAction, parseToolResponse, isToolRequest, buildToolPrompt, isImageRequest, buildImageQueryPrompt, detectRequestKind, buildMediaQueryPrompt, parseMediaPlan, wantsMultipleResults, buildFilePrompt, parseFileResponse, mountToolTimers, clearToolTimers, mountToolCanvases, clearToolCanvases } from './naz-tools.js?v=26';
 
         // ============================================
         // 🔐 Security Utilities
@@ -122,8 +122,13 @@ import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebas
             const rule = SOCIAL_RULES.find(item => item.words.test(value));
             if (!rule) return null;
             const cleaned = value.replace(/@(?:naz|ناز)/giu, ' ');
-            const handle = cleaned.match(/@([A-Za-z0-9._]{2,30})/)
-                || cleaned.match(/(?:يوزر|حساب|بروفايل|profile|username|user)\s*[:=]?\s*@?([A-Za-z0-9._]{2,30})/iu);
+            const reserved = ['p', 'reel', 'reels', 'tv', 'explore', 'search', 'video', 'stories', 'accounts', 'about', 'direct', 'web', 'discover'];
+            const urlMatch = cleaned.match(/(?:tiktok\.com|instagram\.com)\/(?:@|#!\/)?([A-Za-z0-9._]{2,30})/i);
+            const urlUser = urlMatch && !reserved.includes(urlMatch[1].toLowerCase()) ? urlMatch[1] : '';
+            const handle = urlUser
+                ? [null, urlUser]
+                : (cleaned.match(/@([A-Za-z0-9._]{2,30})/)
+                    || cleaned.match(/(?:يوزر|حساب|بروفايل|profile|username|user)\s*[:=]?\s*@?([A-Za-z0-9._]{2,30})/iu));
             const user = handle ? handle[1].replace(/^@+/, '').replace(/[.]+$/, '') : '';
             const searchVerb = /(ابحث|أبحث|ابحثي|بحث|دور|فتش|لقيلي|جيبلي|search|find)/iu.test(value);
             if (user) return { platform: rule.platform, label: rule.label, user, action: 'profile' };
