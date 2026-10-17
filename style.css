@@ -947,3 +947,12 @@ button:focus-visible, [role="button"]:focus-visible, a:focus-visible, input:focu
 .qr-btn { display: inline-flex; align-items: center; gap: 6px; padding: 6px 12px; border-radius: 999px; font-size: .76rem; text-decoration: none; color: #fff; background: linear-gradient(135deg,#4f7cff,#7a4dff); }
 .qr-btn.ghost { background: rgba(255,255,255,.10); }
 .web-extra { background: linear-gradient(135deg,#ff5f6d,#ffc371); }
+
+/* ===== بطاقة تضمين الحساب (انستغرام/تيك توك) ===== */
+.embed-card { border-radius: 16px; overflow: hidden; background: rgba(255,255,255,.04); border: 1px solid rgba(255,255,255,.12); }
+.embed-card.is-ig { border-color: rgba(225,48,108,.35); }
+.embed-card.is-tt { border-color: rgba(37,244,238,.30); }
+.embed-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 10px 12px; font-size: .8rem; }
+.embed-head a { color: inherit; text-decoration: none; opacity: .85; display: inline-flex; align-items: center; gap: 5px; }
+.embed-frame { width: 100%; height: 460px; border: 0; display: block; background: #000; }
+.embed-note { padding: 8px 12px; font-size: .7rem; opacity: .65; }

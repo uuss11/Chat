@@ -1,7 +1,7 @@
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js";
         import { getAnalytics } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-analytics.js";
         import { getDatabase, ref, set, get, push, onValue, query, limitToLast, remove, update, runTransaction, serverTimestamp, onDisconnect } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-database.js";
-        import { TOOL_KINDS, renderToolCard, applyToolAction, parseToolResponse, isToolRequest, buildToolPrompt, isImageRequest, buildImageQueryPrompt, detectRequestKind, buildMediaQueryPrompt, parseMediaPlan, wantsMultipleResults, buildFilePrompt, parseFileResponse, mountToolTimers, clearToolTimers, mountToolCanvases, clearToolCanvases } from './naz-tools.js?v=28';
+        import { TOOL_KINDS, renderToolCard, applyToolAction, parseToolResponse, isToolRequest, buildToolPrompt, isImageRequest, buildImageQueryPrompt, detectRequestKind, buildMediaQueryPrompt, parseMediaPlan, wantsMultipleResults, buildFilePrompt, parseFileResponse, mountToolTimers, clearToolTimers, mountToolCanvases, clearToolCanvases } from './naz-tools.js?v=29';
 
         // ============================================
         // 🔐 Security Utilities
@@ -165,6 +165,23 @@ import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebas
                 .split('\\u003A').join(':')
                 .split('\\u003D').join('=')
                 .split('\\u003F').join('?');
+        }
+        function renderEmbedCard(embed) {
+            const data = embed || {};
+            const isIg = data.platform === 'instagram';
+            const platform = isIg ? 'انستغرام' : 'تيك توك';
+            const url = sanitizeURL(data.url) || '';
+            if (!url) return '';
+            const link = sanitizeURL(data.link) || url;
+            const user = sanitizeHTML(String(data.user || ''));
+            return `<div class="embed-card ${isIg ? 'is-ig' : 'is-tt'}">
+                <div class="embed-head">
+                    <span><i class="fas ${isIg ? 'fa-camera' : 'fa-music'}"></i> @${user} · ${platform}</span>
+                    <a href="${sanitizeHTML(link)}" target="_blank" rel="noopener noreferrer">فتح بالموقع <i class="fas fa-up-right-from-square"></i></a>
+                </div>
+                <iframe class="embed-frame" src="${sanitizeHTML(url)}" loading="lazy" allowfullscreen referrerpolicy="no-referrer" title="@${user}"></iframe>
+                <div class="embed-note">الحساب معروض مباشرة من ${platform} داخل الدردشة (بدون سيرفر وسيط).</div>
+            </div>`;
         }
         function renderProfileCard(profile) {
             const p = profile || {};
@@ -853,6 +870,7 @@ import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebas
                 renderWebCard,
                 googleSearchUrl,
                 renderProfileCard,
+                renderEmbedCard,
                 unescapeSocialValue,
                 renderQrCard,
                 qrImageUrl,
@@ -1232,6 +1250,9 @@ import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebas
                     } else if (m.file && m.file.content) {
                         fileRegistry.set(child.key, m.file);
                         content = renderFileCard(child.key, m.file, m.txt);
+                    } else if (m.embed && m.embed.url) {
+                        content = renderEmbedCard(m.embed);
+                        if (m.caption) content += `<div class="image-caption">${sanitizeHTML(m.caption)}</div>`;
                     } else if (m.profile && m.profile.username) {
                         content = renderProfileCard(m.profile);
                         if (m.caption) content += `<div class="image-caption">${sanitizeHTML(m.caption)}</div>`;
@@ -2619,17 +2640,23 @@ import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebas
                             : `https://www.tiktok.com/@${encodeURIComponent(socialRequest.user)}`;
                         const lookupError = (window.__nazLastSocialError || '') + '';
                         const blocked = lookupError.indexOf('blocked') !== -1;
+                        const embedUrl = socialRequest.platform === 'instagram'
+                            ? `https://www.instagram.com/${encodeURIComponent(socialRequest.user)}/embed/`
+                            : `https://www.tiktok.com/embed/@${encodeURIComponent(socialRequest.user)}`;
                         const fbMessage = {
                             uid: 'naz_ai',
                             name: aiName,
                             txt: blocked
-                                ? `ما كدرت أجيب بيانات @${socialRequest.user} من ${socialRequest.label} (المنصة تحجب السيرفرات). هذا الحساب مباشرة: ${barUrl}`
+                                ? ''
                                 : `ما لقيت حساب @${socialRequest.user} على ${socialRequest.label} — تأكد من اليوزر. جرّب تكتبه بدون @ أو أرسل رابط الحساب.`,
+                            embed: blocked ? { platform: socialRequest.platform, user: socialRequest.user, url: embedUrl, link: barUrl } : undefined,
                             time: serverTimestamp(),
                             avatar: aiAvatar,
                             reply: { name: safeUserName, txt: safeUserMessage.slice(0, 120) }
                         };
+                        if (!blocked) delete fbMessage.embed;
                         try {
+                            if (blocked) { await push(ref(db, 'messages'), fbMessage); showNotification(`✅ فتحت حساب @${socialRequest.user} داخل الدردشة`); return; }
                             const alt = await runSearch(`${socialRequest.user} ${socialRequest.label}`, 'web', 1);
                             if (alt.items.length) {
                                 fbMessage.txt = '';
