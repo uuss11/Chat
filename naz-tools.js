@@ -582,7 +582,7 @@ export const TOOL_KINDS = {
                     <div class="search-modes">
                         <button type="button" class="search-mode ${mode === 'web' ? 'is-on' : ''}" data-tool-action="search" data-tool-mode="web"><i class="fas fa-globe"></i> الويب</button>
                         <button type="button" class="search-mode ${mode === 'images' ? 'is-on' : ''}" data-tool-action="search" data-tool-mode="images"><i class="fas fa-image"></i> الصور</button>
-                        ${query ? `<a class="search-mode search-google" href="https://cse.google.com/cse?cx=${esc(googleCseCx())}&q=${esc(encodeURIComponent(query))}" target="_blank" rel="noopener noreferrer"><i class="fas fa-google"></i> جوجل</a>` : ''}
+                        ${query ? `<a class="search-mode search-google" href="${esc(googleSearchUrl(query))}" target="_blank" rel="noopener noreferrer"><i class="fas fa-google"></i> جوجل</a>` : ''}
                         ${cards && page < 5 ? `<button type="button" class="search-mode search-more" data-tool-action="search" data-tool-mode="${mode}" data-tool-page="next"><i class="fas fa-angles-down"></i> المزيد</button>` : ''}
                     </div>
                     ${statusText ? `<div class="search-status ${status === 'loading' ? 'is-loading' : ''}">${esc(statusText)}</div>` : ''}
@@ -593,11 +593,11 @@ export const TOOL_KINDS = {
 };
 
 export const TOOL_KIND_LIST = Object.keys(TOOL_KINDS);
-/* معرّف محرك بحث جوجل العام (مو سرّي — يظهر بمقتطف الـ CSE) */
-export const GOOGLE_CSE_CX = 'd3704a7eb546d46c5';
-function googleCseCx() {
-    const fromGlobal = typeof window !== 'undefined' ? window.REZA_GOOGLE_CX : '';
-    return String(fromGlobal || GOOGLE_CSE_CX).trim();
+/* رابط نتائج Google المباشر للاستعلام (بلا أي مفتاح) */
+export function googleSearchUrl(query) {
+    const q = String(query || '').trim().slice(0, 120);
+    if (q.length < 2) return '';
+    return 'https://www.google.com/search?hl=ar&q=' + encodeURIComponent(q);
 }
 
 /* ---------- normalization + prompt ---------- */

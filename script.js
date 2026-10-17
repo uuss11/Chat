@@ -1,7 +1,7 @@
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js";
         import { getAnalytics } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-analytics.js";
         import { getDatabase, ref, set, get, push, onValue, query, limitToLast, remove, update, runTransaction, serverTimestamp, onDisconnect } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-database.js";
-        import { TOOL_KINDS, renderToolCard, applyToolAction, parseToolResponse, isToolRequest, buildToolPrompt, isImageRequest, buildImageQueryPrompt, detectRequestKind, buildMediaQueryPrompt, parseMediaPlan, wantsMultipleResults, buildFilePrompt, parseFileResponse, mountToolTimers, clearToolTimers, mountToolCanvases, clearToolCanvases } from './naz-tools.js?v=21';
+        import { TOOL_KINDS, renderToolCard, applyToolAction, parseToolResponse, isToolRequest, buildToolPrompt, isImageRequest, buildImageQueryPrompt, detectRequestKind, buildMediaQueryPrompt, parseMediaPlan, wantsMultipleResults, buildFilePrompt, parseFileResponse, mountToolTimers, clearToolTimers, mountToolCanvases, clearToolCanvases } from './naz-tools.js?v=22';
 
         // ============================================
         // 🔐 Security Utilities
@@ -61,25 +61,17 @@ import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebas
                 .replace(/'/g, '&#39;');
         }
 
-        const GOOGLE_CSE_CX_FALLBACK = 'd3704a7eb546d46c5';
-        function googleCseCx() {
-            const cfg = dbAiConfig || {};
-            const fromGlobal = typeof window !== 'undefined' ? window.REZA_GOOGLE_CX : '';
-            return String(cfg.googleCx || fromGlobal || GOOGLE_CSE_CX_FALLBACK).trim();
-        }
-        // جوجل قفلت Custom Search JSON API على المشاريع الجديدة، فالبديل: فتح نتائج Google مباشرة
-        function googleCseUrl(query) {
+        // واجهة Google JSON مقفلة على المشاريع الجديدة، فالبديل: فتح نتائج Google مباشرة بضغطة
+        function googleSearchUrl(query) {
             const q = String(query || '').trim().slice(0, 120);
             if (q.length < 2) return '';
-            const cx = googleCseCx();
-            if (!cx) return '';
-            return `https://cse.google.com/cse?cx=${encodeURIComponent(cx)}&q=${encodeURIComponent(q)}`;
+            return `https://www.google.com/search?hl=ar&q=${encodeURIComponent(q)}`;
         }
         function updateGoogleSearchStatus() {
             const status = document.getElementById('ai-google-status');
             if (!status) return;
             const { key, cx, worker } = getSearchSettings();
-            if (worker) status.textContent = '✅ البحث يمر عبر Cloudflare Worker · زر «جوجل» داخل البطاقة يفتح نتائج Google مباشرة.';
+            if (worker) status.textContent = '✅ البحث يمر عبر Cloudflare Worker · زر «جوجل» يفتح نتائج Google الحقيقية بضغطة.';
             else if (key && cx) status.textContent = '✅ بحث جوجل مفعّل مباشرة من المتصفح (100 بحث مجاني يومياً).';
             else if (key || cx) status.textContent = '⚠️ أكمل الحقلين: مفتاح Google و CX.';
             else status.textContent = 'ℹ️ بدون مفتاح جوجل: البحث يعمل عبر ويكيبيديا (عربي + إنجليزي).';
@@ -227,7 +219,7 @@ import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebas
                 .join('');
             if (!items) return '';
             const engine = web?.engine === 'google' ? 'جوجل' : 'بحث مفتوح المصدر';
-            const cse = googleCseUrl(web?.query || '');
+            const cse = googleSearchUrl(web?.query || '');
             const googleLink = cse
                 ? `<a class="web-google" href="${sanitizeHTML(cse)}" target="_blank" rel="noopener noreferrer"><i class="fas fa-google"></i> نتائج جوجل</a>`
                 : '';
@@ -718,7 +710,7 @@ import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebas
                 renderResultsCard,
                 showChosenResult,
                 renderWebCard,
-                googleCseUrl,
+                googleSearchUrl,
                 detectRequestKind,
                 wantsMultipleResults,
                 runSearch,
