@@ -1,7 +1,7 @@
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js";
         import { getAnalytics } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-analytics.js";
         import { getDatabase, ref, set, get, push, onValue, query, limitToLast, remove, update, runTransaction, serverTimestamp, onDisconnect } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-database.js";
-        import { TOOL_KINDS, renderToolCard, applyToolAction, parseToolResponse, isToolRequest, buildToolPrompt, isImageRequest, buildImageQueryPrompt, detectRequestKind, buildMediaQueryPrompt, parseMediaPlan, wantsMultipleResults, buildFilePrompt, parseFileResponse, mountToolTimers, clearToolTimers, mountToolCanvases, clearToolCanvases } from './naz-tools.js?v=18';
+        import { TOOL_KINDS, renderToolCard, applyToolAction, parseToolResponse, isToolRequest, buildToolPrompt, isImageRequest, buildImageQueryPrompt, detectRequestKind, buildMediaQueryPrompt, parseMediaPlan, wantsMultipleResults, buildFilePrompt, parseFileResponse, mountToolTimers, clearToolTimers, mountToolCanvases, clearToolCanvases } from './naz-tools.js?v=19';
 
         // ============================================
         // 🔐 Security Utilities
@@ -65,7 +65,7 @@ import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebas
             const status = document.getElementById('ai-google-status');
             if (!status) return;
             const { key, cx, worker } = getSearchSettings();
-            if (worker) status.textContent = '✅ البحث يمر عبر وسيط Cloudflare (المفتاح يبقى مخفياً).';
+            if (worker) status.textContent = '✅ بحث جوجل يمر عبر Cloudflare Worker (المفتاح مخفي عن المتصفح).';
             else if (key && cx) status.textContent = '✅ بحث جوجل مفعّل مباشرة من المتصفح (100 بحث مجاني يومياً).';
             else if (key || cx) status.textContent = '⚠️ أكمل الحقلين: مفتاح Google و CX.';
             else status.textContent = 'ℹ️ بدون مفتاح جوجل: البحث يعمل عبر ويكيبيديا (عربي + إنجليزي).';
@@ -76,7 +76,8 @@ import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebas
             return {
                 key: String(cfg.googleKey || '').trim(),
                 cx: String(cfg.googleCx || '').trim(),
-                worker: String(cfg.googleWorker || '').trim()
+                // الأولوية: وسيط مخصص، وإلا الـ Cloudflare Worker الافتراضي (المفتاح يبقى بالكلاود)
+                worker: String(cfg.googleWorker || '').trim() || resolveCloudApiUrl()
             };
         }
 
@@ -100,10 +101,13 @@ import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebas
             const targetPage = Math.min(5, Math.max(1, Number(page) || 1));
             try {
                 if (worker && /^https:\/\//i.test(worker)) {
-                    const url = `${worker}${worker.includes('?') ? '&' : '?'}q=${encodeURIComponent(trimmed)}&type=${wanted}&page=${targetPage}`;
+                    const url = `${worker}/search?q=${encodeURIComponent(trimmed)}&type=${wanted}&page=${targetPage}`;
                     const payload = await fetchJsonWithTimeout(url, 15000);
                     const items = normaliseSearchItems(payload, wanted);
                     if (items.length) return { engine: 'google', items };
+                    if (payload && payload.ok === false && payload.error) {
+                        console.warn('☁️ Google search via Worker failed:', payload.error, payload.status || '');
+                    }
                 }
                 if (key && cx) {
                     const params = new URLSearchParams({ key, cx, q: trimmed, num: '10' });
