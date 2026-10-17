@@ -1,7 +1,7 @@
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js";
         import { getAnalytics } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-analytics.js";
         import { getDatabase, ref, set, get, push, onValue, query, limitToLast, remove, update, runTransaction, serverTimestamp, onDisconnect } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-database.js";
-        import { TOOL_KINDS, renderToolCard, applyToolAction, parseToolResponse, isToolRequest, buildToolPrompt, isImageRequest, buildImageQueryPrompt, mountToolTimers, clearToolTimers } from './naz-tools.js?v=7';
+        import { TOOL_KINDS, renderToolCard, applyToolAction, parseToolResponse, isToolRequest, buildToolPrompt, isImageRequest, buildImageQueryPrompt, detectRequestKind, buildMediaQueryPrompt, parseMediaPlan, buildFilePrompt, parseFileResponse, mountToolTimers, clearToolTimers, mountToolCanvases, clearToolCanvases } from './naz-tools.js?v=8';
 
         // ============================================
         // 🔐 Security Utilities
@@ -39,6 +39,46 @@ import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebas
         }
 
         // 🛡️ تنقية URLs لمنع javascript: protocol
+        const AUDIO_URL_PATTERN = /\.(mp3|ogg|oga|m4a|wav)(\?.*)?$/i;
+        const VIDEO_URL_PATTERN = /\.(mp4|webm|ogv|m4v)(\?.*)?$/i;
+
+        function isAudioUrl(url) {
+            const safe = sanitizeURL(url);
+            return !!safe && AUDIO_URL_PATTERN.test(safe);
+        }
+
+        function isVideoUrl(url) {
+            const safe = sanitizeURL(url);
+            return !!safe && VIDEO_URL_PATTERN.test(safe);
+        }
+
+        function escapeCode(value) {
+            return String(value ?? '')
+                .replace(/&/g, '&amp;')
+                .replace(/</g, '&lt;')
+                .replace(/>/g, '&gt;')
+                .replace(/"/g, '&quot;')
+                .replace(/'/g, '&#39;');
+        }
+
+        function renderFileCard(msgKey, file, caption) {
+            const sizeLabel = file.size > 1024 ? `${Math.round(file.size / 1024)} كيلوبايت` : `${file.size} حرف`;
+            return `<div class="file-card">
+                <div class="file-head">
+                    <span class="file-icon"><i class="fas fa-file-code"></i></span>
+                    <span class="file-name">${escapeCode(file.name)}</span>
+                    <span class="file-lang">${escapeCode(file.language || 'text')}</span>
+                </div>
+                ${caption ? `<div class="file-caption">${sanitizeHTML(caption)}</div>` : ''}
+                <pre class="file-code" onclick="event.stopPropagation()"><code>${escapeCode(file.content.slice(0, 20000))}</code></pre>
+                <div class="file-foot">
+                    <span class="file-size">${escapeCode(sizeLabel)}</span>
+                    <button type="button" class="tool-key tool-key-primary" data-file-copy="${escapeCode(msgKey)}"><i class="fas fa-copy"></i> نسخ</button>
+                    <button type="button" class="tool-key" data-file-download="${escapeCode(msgKey)}"><i class="fas fa-download"></i> تنزيل</button>
+                </div>
+            </div>`;
+        }
+
         function sanitizeURL(url) {
             if (!url) return '';
             const trimmed = String(url).trim();
@@ -113,6 +153,7 @@ import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebas
         let aiKeyStatus = {};
         let aiModelChain = [];
         const toolRegistry = new Map();
+        const fileRegistry = new Map();
         const openReactionDetails = new Set();
         let openRouterModelsCache = null;
         let openRouterModelsCachedAt = 0;
@@ -736,6 +777,19 @@ import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebas
                         const safeImgAttr = sanitizeHTML(safeImgUrl);
                         content = `<img src="${safeImgAttr}" class="bubble-image" onclick="openImageModal('${safeImgAttr}')" alt="صورة">`;
                         if (m.caption) content += `<div class="image-caption">${sanitizeHTML(m.caption)}</div>`;
+                    } else if (m.file && m.file.content) {
+                        fileRegistry.set(child.key, m.file);
+                        content = renderFileCard(child.key, m.file, m.txt);
+                    } else if (m.media === 'audio' || (!m.media && isAudioUrl(m.txt))) {
+                        const safeAudio = sanitizeURL(m.txt) || '';
+                        content = safeAudio
+                            ? `<div class="media-card"><audio controls preload="metadata" src="${sanitizeHTML(safeAudio)}"></audio><a class="media-link" href="${sanitizeHTML(safeAudio)}" target="_blank" rel="noopener noreferrer">فتح الملف الصوتي</a>${m.caption ? `<div class="image-caption">${sanitizeHTML(m.caption)}</div>` : ''}</div>`
+                            : processMessageText(m.txt);
+                    } else if (m.media === 'video' || (!m.media && isVideoUrl(m.txt))) {
+                        const safeVideo = sanitizeURL(m.txt) || '';
+                        content = safeVideo
+                            ? `<div class="media-card"><video controls preload="metadata" playsinline src="${sanitizeHTML(safeVideo)}"></video><a class="media-link" href="${sanitizeHTML(safeVideo)}" target="_blank" rel="noopener noreferrer">فتح الفيديو</a>${m.caption ? `<div class="image-caption">${sanitizeHTML(m.caption)}</div>` : ''}</div>`
+                            : processMessageText(m.txt);
                     } else {
                         content = processMessageText(m.txt);
                     }
@@ -792,6 +846,16 @@ import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebas
                 document.getElementById('stats-total-messages').textContent = msgCount;
                 document.getElementById('stats-total-images').textContent = imgCount;
                 mountToolTimers(flow);
+                mountToolCanvases(flow, {
+                    resolve: (msgKey, key) => {
+                        const entry = toolRegistry.get(msgKey);
+                        const strokes = entry?.state?.[key];
+                        return Array.isArray(strokes) ? strokes : [];
+                    },
+                    onStroke: (msgKey, key, stroke) => {
+                        void runToolAction(msgKey, 'custom', { fields: {}, stroke, strokeKey: key });
+                    }
+                });
                 flow.scrollTop = flow.scrollHeight;
             }, (error) => {
                 console.error('Messages listener error:', error);
@@ -1359,8 +1423,159 @@ import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebas
         }
 
         const IMAGE_MIME_TYPES = ['image/jpeg', 'image/png', 'image/webp', 'image/gif'];
+        const AUDIO_EXTENSIONS = ['mp3', 'ogg', 'oga', 'm4a', 'wav'];
+        const VIDEO_EXTENSIONS = ['mp4', 'webm', 'ogv', 'm4v'];
+        const MAX_MEDIA_BYTES = 80 * 1024 * 1024;
+
+        async function fetchJsonWithTimeout(url, timeoutMs = 15000) {
+            const controller = new AbortController();
+            const timeout = setTimeout(() => controller.abort(), timeoutMs);
+            try {
+                const response = await fetch(url, { headers: { Accept: 'application/json' }, signal: controller.signal });
+                if (!response.ok) return null;
+                return await response.json();
+            } catch {
+                return null;
+            } finally {
+                clearTimeout(timeout);
+            }
+        }
+
+        function stripTracking(url) {
+            return String(url || '')
+                .replace(/[?&]utm_[^&#]*/g, '')
+                .replace(/[?&]$/, '');
+        }
+
+        function scoreMatch(candidateText, query) {
+            const haystack = String(candidateText || '').toLowerCase();
+            const terms = String(query || '').toLowerCase().split(/[^\p{L}\p{N}]+/u).filter(term => term.length > 2);
+            if (!terms.length) return 0;
+            return terms.reduce((score, term) => score + (haystack.includes(term) ? 1 : 0), 0) / terms.length;
+        }
+
+        function pickBestCandidate(candidates, query) {
+            if (!candidates.length) return null;
+            const ranked = candidates
+                .map(candidate => ({ ...candidate, score: scoreMatch(`${candidate.title || ''} ${candidate.url || ''}`, query) }))
+                .sort((a, b) => b.score - a.score || (a.weight || 0) - (b.weight || 0));
+            return ranked[0].url;
+        }
+
+        async function searchOpenverse(queries, kind) {
+            const candidates = [];
+            for (const rawQuery of queries.slice(0, 3)) {
+                const query = String(rawQuery || '').trim().slice(0, 120);
+                if (query.length < 2) continue;
+                const payload = await fetchJsonWithTimeout(`https://api.openverse.org/v1/${kind}/?q=${encodeURIComponent(query)}&page_size=15`);
+                const results = Array.isArray(payload?.results) ? payload.results : [];
+                results.forEach(result => {
+                    const safe = sanitizeURL(stripTracking(result.url || ''));
+                    if (!safe) return;
+                    const allowed = kind === 'audio'
+                        ? AUDIO_EXTENSIONS.some(extension => new RegExp(`\\.${extension}(\\?|$)`, 'i').test(safe))
+                        : /\.(jpe?g|png|webp|gif)(\?|$)/i.test(safe);
+                    if (!allowed) return;
+                    const licence = String(result.license || '').toLowerCase();
+                    candidates.push({
+                        url: safe,
+                        title: result.title || '',
+                        weight: ['cc0', 'pdm', 'by'].includes(licence) ? 0 : 1
+                    });
+                });
+            }
+            return candidates;
+        }
+
+        async function searchArchiveMedia(queries, mediatype, extensions) {
+            const perQuery = 3;
+            for (const rawQuery of queries.slice(0, 2)) {
+                const query = String(rawQuery || '').trim().slice(0, 120);
+                if (query.length < 2) continue;
+                const search = await fetchJsonWithTimeout(`https://archive.org/advancedsearch.php?q=${encodeURIComponent(`(${query}) AND mediatype:${mediatype}`)}&fl[]=identifier&fl[]=title&fl[]=downloads&sort[]=downloads+desc&rows=10&page=1&output=json`, 18000);
+                const docs = Array.isArray(search?.response?.docs)
+                    ? search.response.docs
+                        .map(doc => ({ ...doc, relevance: scoreMatch(doc.title || doc.identifier, query) }))
+                        .sort((a, b) => b.relevance - a.relevance || Number(b.downloads || 0) - Number(a.downloads || 0))
+                    : [];
+                let inspected = 0;
+                for (const doc of docs) {
+                    if (!doc?.identifier || inspected >= perQuery) break;
+                    inspected++;
+                    const meta = await fetchJsonWithTimeout(`https://archive.org/metadata/${encodeURIComponent(doc.identifier)}`, 18000);
+                    const files = Array.isArray(meta?.files) ? meta.files : [];
+                    const usable = files
+                        .filter(file => {
+                            const name = String(file.name || '');
+                            const extension = name.split('.').pop().toLowerCase();
+                            if (!extensions.includes(extension)) return false;
+                            const size = Number(file.size);
+                            return Number.isFinite(size) ? size > 0 && size <= MAX_MEDIA_BYTES : true;
+                        })
+                        .sort((a, b) => Number(a.size || 0) - Number(b.size || 0));
+                    if (!usable.length) continue;
+                    const chosen = usable[0];
+                    return {
+                        url: `https://archive.org/download/${encodeURIComponent(doc.identifier)}/${encodeURIComponent(String(chosen.name)).replace(/%2F/g, '/')}`,
+                        title: doc.title || chosen.name
+                    };
+                }
+            }
+            return null;
+        }
+
+        async function searchCommonsMedia(queries, kind) {
+            const filter = kind === 'audio' ? 'filemime:audio/mpeg ' : kind === 'video' ? 'filemime:video/webm ' : '';
+            const extensions = kind === 'audio' ? AUDIO_EXTENSIONS : kind === 'video' ? VIDEO_EXTENSIONS : ['jpg', 'jpeg', 'png', 'webp', 'gif'];
+            for (const rawQuery of queries.slice(0, 3)) {
+                const query = String(rawQuery || '').trim().slice(0, 120);
+                if (query.length < 2) continue;
+                const payload = await fetchJsonWithTimeout(`https://commons.wikimedia.org/w/api.php?action=query&format=json&origin=*&generator=search&gsrsearch=${encodeURIComponent(filter + query)}&gsrnamespace=6&gsrlimit=15&prop=imageinfo&iiprop=url|mime`);
+                const pages = payload?.query?.pages ? Object.values(payload.query.pages) : [];
+                const candidates = pages.map(page => {
+                    const info = Array.isArray(page.imageinfo) ? page.imageinfo[0] : null;
+                    if (!info) return null;
+                    const safe = sanitizeURL(stripTracking(info.thumburl || info.url || ''));
+                    if (!safe) return null;
+                    return extensions.some(extension => new RegExp(`\\.${extension}$`, 'i').test(safe))
+                        ? { url: safe, title: page.title || '' }
+                        : null;
+                }).filter(Boolean);
+                if (candidates.length) return candidates;
+            }
+            return [];
+        }
 
         async function searchCommonsImage(queries) {
+            const openverseCandidates = await searchOpenverse(queries, 'images');
+            const openversePick = pickBestCandidate(openverseCandidates, queries[0] || '');
+            if (openversePick) return openversePick;
+            const commonsCandidates = await searchCommonsMedia(queries, 'image');
+            const commonsPick = pickBestCandidate(commonsCandidates, queries[0] || '');
+            if (commonsPick) return commonsPick;
+            return searchCommonsImageLegacy(queries);
+        }
+
+        async function resolveMediaUrl(kind, queries) {
+            const primary = queries[0] || '';
+            if (kind === 'image') return searchCommonsImage(queries);
+            if (kind === 'audio') {
+                const openverse = await searchOpenverse(queries, 'audio');
+                const pick = pickBestCandidate(openverse, primary);
+                if (pick) return pick;
+                const commons = await searchCommonsMedia(queries, 'audio');
+                const commonsPick = pickBestCandidate(commons, primary);
+                if (commonsPick) return commonsPick;
+                const archive = await searchArchiveMedia(queries, 'audio', AUDIO_EXTENSIONS);
+                return archive?.url || null;
+            }
+            const archiveVideo = await searchArchiveMedia(queries, 'movies', VIDEO_EXTENSIONS);
+            if (archiveVideo?.url) return archiveVideo.url;
+            const commonsVideo = await searchCommonsMedia(queries, 'video');
+            return pickBestCandidate(commonsVideo, primary);
+        }
+
+        async function searchCommonsImageLegacy(queries) {
             for (const rawQuery of queries.slice(0, 3)) {
                 const cleanQuery = String(rawQuery || '').trim().slice(0, 120);
                 if (cleanQuery.length < 2) continue;
@@ -1763,37 +1978,76 @@ import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebas
             showNotification('NAZ Ai يكتب الآن... 🤖');
             console.log(`🤖 AI triggered by ${safeUserName}: "${safeUserMessage}"`);
 
-            if (isImageRequest(safeUserMessage)) {
+            const requestKind = detectRequestKind(safeUserMessage).kind;
+            console.log('🧭 NAZ request kind:', requestKind);
+
+            if (requestKind === 'image' || requestKind === 'audio' || requestKind === 'video') {
                 try {
-                    showNotification('NAZ تدوّر صورة... 🔍');
-                    const planCompletion = await callOpenRouter(
-                        [{ role: 'user', content: buildImageQueryPrompt(safeUserMessage, safeUserName) }],
-                        { maxTokens: 300, json: true }
-                    );
-                    const plan = parseImageSearchResponse(planCompletion.text);
-                    const fallbackQueries = [safeUserMessage.replace(/[^\p{L}\p{N}\s]/gu, ' ').trim().slice(0, 60)];
-                    const foundUrl = await searchCommonsImage(plan?.queries?.length ? plan.queries : fallbackQueries);
-                    if (foundUrl) {
-                        await push(ref(db, 'messages'), {
+                    const label = requestKind === 'image' ? 'صورة' : requestKind === 'audio' ? 'مقطع صوتي' : 'مقطع فيديو';
+                    showNotification(`NAZ تدوّر ${label}... 🔍`);
+                    let plan = null;
+                    try {
+                        const planCompletion = await callOpenRouter(
+                            [{ role: 'user', content: buildMediaQueryPrompt(safeUserMessage, safeUserName, requestKind) }],
+                            { maxTokens: 320, json: true }
+                        );
+                        plan = parseMediaPlan(planCompletion.text);
+                    } catch (planError) {
+                        console.warn('Media query planning failed:', planError);
+                    }
+                    const fallbackQueries = [safeUserMessage.replace(/[^\p{L}\p{N}\s]/gu, ' ').replace(/\s+/g, ' ').trim().slice(0, 70)];
+                    const queries = plan?.queries?.length ? plan.queries : fallbackQueries;
+                    const mediaUrl = await resolveMediaUrl(requestKind, queries);
+                    if (mediaUrl) {
+                        const message = {
                             uid: 'naz_ai',
                             name: aiName,
-                            txt: foundUrl,
+                            txt: mediaUrl,
                             time: serverTimestamp(),
                             avatar: aiAvatar,
-                            isImage: true,
-                            caption: (plan?.caption || 'هذي الصورة اللي طلبتها').slice(0, 140),
+                            caption: (plan?.caption || `هذا اللي لقيته لك عن ${plan?.title || safeUserMessage.slice(0, 40)}`).slice(0, 160),
                             reply: { name: safeUserName, txt: safeUserMessage.slice(0, 120) }
-                        });
-                        showNotification('✅ ناز أرسلت الصورة');
+                        };
+                        if (requestKind === 'image') message.isImage = true;
+                        else message.media = requestKind;
+                        await push(ref(db, 'messages'), message);
+                        showNotification(requestKind === 'image' ? '✅ ناز أرسلت الصورة' : requestKind === 'audio' ? '✅ ناز أرسلت المقطع الصوتي' : '✅ ناز أرسلت الفيديو');
                         return;
                     }
-                    console.warn('No Wikimedia image matched, falling back to a text reply');
-                } catch (imageError) {
-                    console.warn('Image search failed, falling back to a text reply:', imageError);
+                    console.warn('No media matched, falling back to a text reply');
+                } catch (mediaError) {
+                    console.warn('Media lookup failed, falling back to a text reply:', mediaError);
                 }
             }
 
-            if (isToolRequest(safeUserMessage)) {
+            if (requestKind === 'file') {
+                try {
+                    showNotification('NAZ تكتب الملف... 📄');
+                    const fileCompletion = await callOpenRouter(
+                        [{ role: 'user', content: buildFilePrompt(safeUserMessage, safeUserName) }],
+                        { maxTokens: 3500, json: true }
+                    );
+                    const parsedFile = parseFileResponse(fileCompletion.text);
+                    if (parsedFile) {
+                        await push(ref(db, 'messages'), {
+                            uid: 'naz_ai',
+                            name: aiName,
+                            txt: parsedFile.caption,
+                            time: serverTimestamp(),
+                            avatar: aiAvatar,
+                            reply: { name: safeUserName, txt: safeUserMessage.slice(0, 120) },
+                            file: parsedFile.file
+                        });
+                        showNotification(`✅ ناز أرسلت الملف ${parsedFile.file.name}`);
+                        return;
+                    }
+                    console.warn('File response could not be parsed, falling back to a text reply');
+                } catch (fileError) {
+                    console.warn('File generation failed, falling back to a text reply:', fileError);
+                }
+            }
+
+            if (requestKind === 'interactive' || isToolRequest(safeUserMessage)) {
                 try {
                     const toolCompletion = await callOpenRouter(
                         [{ role: 'user', content: buildToolPrompt(safeUserMessage, safeUserName, currentMood.label) }],
@@ -2137,6 +2391,22 @@ import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebas
 
         // === نظام الريأكشنات ===
         // === أدوات ناز التفاعلية داخل الدردشة ===
+        function spawnVisualBurst(trigger) {
+            const container = trigger.closest('.tool-visual');
+            if (!container) return;
+            const preset = container.dataset.toolPreset || 'heart';
+            const glyphs = preset === 'stars' ? ['⭐', '🌟', '✨'] : preset === 'confetti' ? ['🎉', '🎊', '✨'] : ['💗', '💖', '💕', '❤️'];
+            for (let index = 0; index < 6; index++) {
+                const bubble = document.createElement('span');
+                bubble.className = 'tool-float';
+                bubble.textContent = glyphs[Math.floor(Math.random() * glyphs.length)];
+                bubble.style.setProperty('--float-x', `${Math.round((Math.random() - 0.5) * 90)}px`);
+                bubble.style.setProperty('--float-delay', `${index * 40}ms`);
+                container.appendChild(bubble);
+                setTimeout(() => bubble.remove(), 1400);
+            }
+        }
+
         function collectToolPayload(card, trigger) {
             const payload = { fields: {} };
             if (trigger.dataset.toolValue !== undefined) payload.value = trigger.dataset.toolValue;
@@ -2172,6 +2442,36 @@ import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebas
         }
 
         document.getElementById('chat-flow').addEventListener('click', event => {
+            const copyTrigger = event.target.closest('[data-file-copy]');
+            if (copyTrigger) {
+                event.preventDefault();
+                event.stopPropagation();
+                const file = fileRegistry.get(copyTrigger.dataset.fileCopy);
+                if (!file) return;
+                const writePromise = navigator.clipboard?.writeText
+                    ? navigator.clipboard.writeText(file.content)
+                    : Promise.reject(new Error('clipboard unavailable'));
+                writePromise
+                    .then(() => showNotification(`📋 نُسخ ${file.name}`))
+                    .catch(() => showNotification('⚠️ تعذّر النسخ، افتح الملف وانسخه يدوياً'));
+                return;
+            }
+            const downloadTrigger = event.target.closest('[data-file-download]');
+            if (downloadTrigger) {
+                event.preventDefault();
+                event.stopPropagation();
+                const file = fileRegistry.get(downloadTrigger.dataset.fileDownload);
+                if (!file) return;
+                const blob = new Blob([file.content], { type: 'text/plain;charset=utf-8' });
+                const link = document.createElement('a');
+                link.href = URL.createObjectURL(blob);
+                link.download = file.name;
+                document.body.appendChild(link);
+                link.click();
+                link.remove();
+                setTimeout(() => URL.revokeObjectURL(link.href), 4000);
+                return;
+            }
             const trigger = event.target.closest('[data-tool-action]');
             if (!trigger) {
                 const menuTrigger = event.target.closest('[data-tool-menu]');
@@ -2187,6 +2487,7 @@ import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebas
             event.stopPropagation();
             const card = trigger.closest('[data-tool-card]');
             if (!card || trigger.disabled) return;
+            if (trigger.dataset.toolMode === 'visual-tap') spawnVisualBurst(trigger);
             void runToolAction(card.dataset.toolMsg, trigger.dataset.toolAction, collectToolPayload(card, trigger));
         });
 
