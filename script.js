@@ -1,7 +1,7 @@
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js";
         import { getAnalytics } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-analytics.js";
         import { getDatabase, ref, set, get, push, onValue, query, limitToLast, remove, update, runTransaction, serverTimestamp, onDisconnect } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-database.js";
-        import { TOOL_KINDS, renderToolCard, applyToolAction, parseToolResponse, isToolRequest, buildToolPrompt, isImageRequest, buildImageQueryPrompt, detectRequestKind, buildMediaQueryPrompt, parseMediaPlan, wantsMultipleResults, buildFilePrompt, parseFileResponse, mountToolTimers, clearToolTimers, mountToolCanvases, clearToolCanvases } from './naz-tools.js?v=24';
+        import { TOOL_KINDS, renderToolCard, applyToolAction, parseToolResponse, isToolRequest, buildToolPrompt, isImageRequest, buildImageQueryPrompt, detectRequestKind, buildMediaQueryPrompt, parseMediaPlan, wantsMultipleResults, buildFilePrompt, parseFileResponse, mountToolTimers, clearToolTimers, mountToolCanvases, clearToolCanvases } from './naz-tools.js?v=25';
 
         // ============================================
         // 🔐 Security Utilities
@@ -148,13 +148,22 @@ import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebas
             }
             return payload.profile || null;
         }
+        // تيك توك ترجع الروابط بترميز JSON (\u002F) فنسوّي فك ترميز قبل العرض
+        function unescapeSocialValue(value) {
+            return String(value || '')
+                .split('\\u002F').join('/')
+                .split('\\u0026').join('&')
+                .split('\\u003A').join(':')
+                .split('\\u003D').join('=')
+                .split('\\u003F').join('?');
+        }
         function renderProfileCard(profile) {
             const p = profile || {};
             const isIg = p.platform === 'instagram';
             const label = isIg ? 'انستغرام' : 'تيك توك';
             const handle = sanitizeHTML(String(p.username || ''));
             if (!handle) return '';
-            const avatar = sanitizeURL(p.avatar) || '';
+            const avatar = sanitizeURL(unescapeSocialValue(p.avatar)) || '';
             const num = value => (value === null || value === undefined || Number.isNaN(Number(value)))
                 ? ''
                 : Number(value).toLocaleString('en-US');
@@ -176,12 +185,12 @@ import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebas
                 <div class="profile-top">
                     ${avatar ? `<img class="profile-avatar" src="${sanitizeHTML(avatar)}" alt="" loading="lazy">` : '<span class="profile-avatar fallback"><i class="fas fa-user"></i></span>'}
                     <div class="profile-id">
-                        <strong>${sanitizeHTML(String(p.nickname || p.username).slice(0, 60))}${p.verified ? ' <i class="fas fa-circle-check verified"></i>' : ''}</strong>
+                        <strong>${sanitizeHTML(unescapeSocialValue(p.nickname || p.username).slice(0, 60))}${p.verified ? ' <i class="fas fa-circle-check verified"></i>' : ''}</strong>
                         <span>@${handle} · ${label}</span>
                     </div>
                     <a class="profile-open" href="${sanitizeHTML(link)}" target="_blank" rel="noopener noreferrer" title="فتح الحساب"><i class="fas fa-up-right-from-square"></i></a>
                 </div>
-                ${p.bio ? `<div class="profile-bio">${sanitizeHTML(String(p.bio).slice(0, 220))}</div>` : ''}
+                ${p.bio ? `<div class="profile-bio">${sanitizeHTML(unescapeSocialValue(p.bio).slice(0, 220))}</div>` : ''}
                 ${stats ? `<div class="profile-stats">${stats}</div>` : ''}
                 <div class="profile-meta">${metaBits.join(' · ')}${p.external ? ` · <a href="${sanitizeHTML(sanitizeURL(p.external))}" target="_blank" rel="noopener noreferrer">الرابط</a>` : ''}</div>
             </div>`;
@@ -835,6 +844,7 @@ import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebas
                 renderWebCard,
                 googleSearchUrl,
                 renderProfileCard,
+                unescapeSocialValue,
                 renderQrCard,
                 qrImageUrl,
                 detectQrRequest,
