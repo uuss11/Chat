@@ -48,6 +48,9 @@ export function detectRequestKind(text) {
     if (videoWords.test(value)) return { kind: 'video' };
     if (fileWords.test(value) && (wantsSomething || value.length <= 40)) return { kind: 'file' };
     if (imageWords.test(value) && (wantsSomething || value.length <= 40)) return { kind: 'image' };
+    const searchVerb = /(ابحث|أبحث|ابحثي|بحث عن|دور على|فتش|لقيلي|جيبلي خبر|هات خبر|search|look up|google)/iu;
+    const newsWord = /(أخبار|اخبار|أخبار اليوم|news)/iu;
+    if (searchVerb.test(value) || (newsWord.test(value) && !/أخبارك|اخبارك/iu.test(value))) return { kind: 'web' };
     return { kind: 'text' };
 }
 
@@ -126,6 +129,17 @@ export function parseFileResponse(rawText) {
         file: { name, language, content, size: content.length },
         caption: cleanText(parsed.caption, 140) || `جهّزت لك الملف ${name}.`
     };
+}
+
+function safeLink(value) {
+    const raw = String(value || '').trim();
+    if (!/^https?:\/\//i.test(raw)) return '';
+    try {
+        const url = new URL(raw);
+        return url.protocol === 'http:' || url.protocol === 'https:' ? url.href : '';
+    } catch {
+        return '';
+    }
 }
 
 function defaultControlValue(control) {
@@ -525,6 +539,55 @@ export const TOOL_KINDS = {
             flush();
             return `${config?.intro ? `<div class="tool-custom-intro">${esc(config.intro)}</div>` : ''}${parts.join('')}`;
         }
+    },
+    search: {
+        label: 'محرك بحث',
+        icon: 'fa-magnifying-glass',
+        defaults: () => ({ placeholder: 'ابحث في الويب أو الصور...', intro: 'محرّك بحث مشترك — أي شخص يكتب ويبحث والنتايج تظهر للجميع.' }),
+        state: () => ({ query: '', mode: 'web', page: 1, results: [], engine: '', status: 'idle', updatedBy: '' }),
+        actions: ['search'],
+        render(config, state, ctx) {
+            const query = typeof state?.query === 'string' ? state.query : '';
+            const mode = state?.mode === 'images' ? 'images' : 'web';
+            const results = Array.isArray(state?.results) ? state.results : [];
+            const status = state?.status || 'idle';
+            const page = clampNumber(state?.page, 1, 5, 1);
+            const engine = state?.engine === 'google' ? 'جوجل' : state?.engine === 'open' ? 'بحث مفتوح المصدر' : '';
+            const cards = results.map(item => {
+                const link = safeLink(item?.link);
+                if (!link) return '';
+                const title = esc(String(item?.title || link).slice(0, 120));
+                const snippet = esc(String(item?.snippet || '').replace(/\s+/g, ' ').slice(0, 200));
+                if (mode === 'images') {
+                    const thumb = safeLink(item?.thumb) || link;
+                    return `<a class="search-image" href="${esc(link)}" target="_blank" rel="noopener noreferrer"><img src="${esc(thumb)}" alt="" loading="lazy"><span>${title}</span></a>`;
+                }
+                let host = '';
+                try { host = new URL(link).hostname.replace(/^www\./, ''); } catch { host = ''; }
+                return `<a class="search-result" href="${esc(link)}" target="_blank" rel="noopener noreferrer"><span class="search-result-title">${title}</span>${snippet ? `<span class="search-result-snippet">${snippet}</span>` : ''}${host ? `<span class="search-result-host">${esc(host)}</span>` : ''}</a>`;
+            }).filter(Boolean).join('');
+            const statusText = status === 'loading'
+                ? 'جاري البحث...'
+                : status === 'empty'
+                    ? 'ما لقيت نتائج مطابقة.'
+                    : cards ? `${results.length} نتيجة${engine ? ` · ${engine}` : ''} · صفحة ${page}` : '';
+            return `
+                <div class="search-tool" data-search-mode="${mode}">
+                    ${config?.intro ? `<div class="tool-custom-intro">${esc(config.intro)}</div>` : ''}
+                    <div class="search-bar">
+                        <i class="fas fa-magnifying-glass"></i>
+                        <input type="search" class="search-input" data-tool-input="query" data-tool-search-input value="${esc(query)}" placeholder="${esc(config?.placeholder || 'ابحث...')}" maxlength="120" enterkeyhint="search">
+                        <button type="button" class="search-go" data-tool-action="search" data-tool-mode="${mode}">بحث</button>
+                    </div>
+                    <div class="search-modes">
+                        <button type="button" class="search-mode ${mode === 'web' ? 'is-on' : ''}" data-tool-action="search" data-tool-mode="web"><i class="fas fa-globe"></i> الويب</button>
+                        <button type="button" class="search-mode ${mode === 'images' ? 'is-on' : ''}" data-tool-action="search" data-tool-mode="images"><i class="fas fa-image"></i> الصور</button>
+                        ${cards && page < 5 ? `<button type="button" class="search-mode search-more" data-tool-action="search" data-tool-mode="${mode}" data-tool-page="next"><i class="fas fa-angles-down"></i> المزيد</button>` : ''}
+                    </div>
+                    ${statusText ? `<div class="search-status ${status === 'loading' ? 'is-loading' : ''}">${esc(statusText)}</div>` : ''}
+                    ${cards ? `<div class="search-results">${cards}</div>` : status === 'idle' ? '<div class="search-hint">اكتب أي شي واضغط بحث — النتايج تنحفظ وتظهر لكل الأعضاء.</div>' : ''}
+                </div>`;
+        }
     }
 };
 
@@ -639,6 +702,7 @@ export function buildToolPrompt(userMessage, userName, moodLabel) {
 - قرعة: config {title, options:[..]} — سحب عشوائي بين خيارات.
 - محوّل وحدات: config {category} حيث category إما length أو mass أو temp.
 - إكس-أو: config {} — لعبة إكس-أو بلوح مشترك.
+- محرك بحث (search): config {placeholder} — محرّك بحث مشترك داخل الدردشة، أي عضو يكتب كلمة ويبحث بالويب أو بالصور والنتايج تظهر للجميع مع زر المزيد.
 
 وإذا كان الطلب أي شيء آخر غير ما فوق، استخدم النوع custom وابنِ الأداة من المكوّنات التالية داخل config.controls (حتى 12 مكوّناً):
 - {"type":"display","key":"score","label":"النقاط","suffix":" نقطة"} — عرض قيمة.
@@ -844,6 +908,15 @@ export function applyToolAction(kind, config, currentState, action, payload, ctx
             else if (board.every(cell => cell)) winner = 'draw';
             return { board, turn: nextTurn, winner, lastBy: name };
         }
+    }
+
+    if (kind === 'search') {
+        if (action !== 'search') return null;
+        const query = cleanText(payload?.query, 110) || cleanText(state?.query, 110);
+        const mode = payload?.mode === 'images' ? 'images' : 'web';
+        const page = payload?.page === 'next' ? clampNumber((Number(state?.page) || 1) + 1, 1, 5, 1) : 1;
+        if (query.length < 2) return null;
+        return { ...state, query, mode, page, status: 'loading', results: [], engine: '', updatedBy: name };
     }
 
     if (kind === 'custom') {

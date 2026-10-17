@@ -5,11 +5,11 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
     <meta name="theme-color" content="#101719">
     <meta name="description" content="REZA CHAT — مساحة دردشة عربية هادئة ومتجاوبة.">
-    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline' https://www.gstatic.com https://www.googletagmanager.com https://*.firebaseio.com https://*.firebasedatabase.app; style-src 'self' 'unsafe-inline' https://cdnjs.cloudflare.com https://fonts.googleapis.com; font-src https://cdnjs.cloudflare.com https://fonts.gstatic.com; img-src 'self' https: data:; connect-src 'self' https://www.gstatic.com https://www.googletagmanager.com https://*.firebaseio.com https://*.firebasedatabase.app https://*.googleapis.com https://openrouter.ai https://xsgames.co https://commons.wikimedia.org https://*.wikimedia.org https://api.openverse.org https://archive.org https://*.archive.org https://cdn.freesound.org https://*.jamendo.com https://live.staticflickr.com wss://*.firebaseio.com wss://*.firebasedatabase.app; media-src 'self' https: blob:; object-src 'none'; frame-src 'none'; base-uri 'self'; form-action 'self'; upgrade-insecure-requests;">
+    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline' https://www.gstatic.com https://www.googletagmanager.com https://*.firebaseio.com https://*.firebasedatabase.app; style-src 'self' 'unsafe-inline' https://cdnjs.cloudflare.com https://fonts.googleapis.com; font-src https://cdnjs.cloudflare.com https://fonts.gstatic.com; img-src 'self' https: data:; connect-src 'self' https://www.gstatic.com https://www.googletagmanager.com https://*.firebaseio.com https://*.firebasedatabase.app https://*.googleapis.com https://openrouter.ai https://xsgames.co https://commons.wikimedia.org https://*.wikimedia.org https://*.wikipedia.org https://api.duckduckgo.com https://api.openverse.org https://archive.org https://*.archive.org https://cdn.freesound.org https://*.jamendo.com https://live.staticflickr.com wss://*.firebaseio.com wss://*.firebasedatabase.app; media-src 'self' https: blob:; object-src 'none'; frame-src 'none'; base-uri 'self'; form-action 'self'; upgrade-insecure-requests;">
     <title>REZA | Ultra Chat Experience</title>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     <link href="https://fonts.googleapis.com/css2?family=Cairo:wght@300;400;500;600;700;800&family=Tajawal:wght@400;500;700&display=swap" rel="stylesheet">
-    <link rel="stylesheet" href="style.css?v=11">
+    <link rel="stylesheet" href="style.css?v=12">
 </head>
 <body data-theme="calm">
     <div class="bg-container"></div>
@@ -297,18 +297,27 @@
             </section>
 
             <div class="ai-model-search-block">
-                <label class="ai-field-label" for="ai-model-search"><i class="fas fa-search"></i> ابحث في نماذج OpenRouter</label>
+                <label class="ai-field-label" for="ai-model-search"><i class="fas fa-search"></i> ابحث في النماذج المجانية (مرتبة من الأقوى إلى الأضعف)</label>
                 <div class="ai-model-search-row">
-                    <input type="search" id="ai-model-search" class="glass-input" placeholder="مثال: Gemini أو Claude أو Llama" autocomplete="off" oninput="queueAiModelSearch()">
+                    <input type="search" id="ai-model-search" class="glass-input" placeholder="مثال: Gemma أو Nemotron أو Qwen" autocomplete="off" oninput="queueAiModelSearch()">
                     <button type="button" class="ai-model-refresh" onclick="searchOpenRouterModels(true)" title="تحديث قائمة النماذج" aria-label="تحديث قائمة النماذج"><i class="fas fa-rotate"></i></button>
                 </div>
-                <div id="ai-model-status" class="ai-model-status" aria-live="polite">اكتب اسم نموذج أو شركة للبحث.</div>
+                <div id="ai-model-status" class="ai-model-status" aria-live="polite">النماذج المجانية فقط · مرتبة من الأقوى إلى الأضعف.</div>
                 <div id="ai-model-results" class="ai-model-results" role="listbox" aria-label="نماذج OpenRouter المطابقة"></div>
                 <label class="ai-field-label" for="ai-model"><i class="fas fa-brain"></i> النموذج الأساسي</label>
                 <input type="text" id="ai-model" class="glass-input ai-model-id" placeholder="اختر من النتائج أو أدخل المعرّف يدوياً">
                 <label class="ai-field-label"><i class="fas fa-layer-group"></i> سلسلة الاحتياط (يُجرَّب نموذج بعد آخر عند الفشل)</label>
                 <div id="ai-model-chain" class="ai-model-chain"></div>
-                <small class="ai-model-note">أضف نماذج احتياطية من نتائج البحث بزر «احتياطي». إذا ما رد النموذج الأساسي، ينتقل ناز تلقائياً للنموذج التالي ثم للمفتاح التالي.</small>
+                <small class="ai-model-note">النماذج المعروضة مجانية فقط (سعرها صفر) والترتيب من الأقوى إلى الأضعف حسب حجم النموذج وسياقه وحداثته. أضف نماذج احتياطية بزر «احتياطي» — إذا ما رد النموذج الأساسي ينتقل ناز تلقائياً للنموذج التالي ثم للمفتاح التالي.</small>
+
+                <div class="ai-search-settings">
+                    <label class="ai-field-label"><i class="fas fa-magnifying-glass"></i> بحث جوجل داخل الدردشة (اختياري)</label>
+                    <input type="password" id="ai-google-key" class="glass-input" placeholder="Google API Key" autocomplete="off">
+                    <input type="text" id="ai-google-cx" class="glass-input" placeholder="محرّك البحث CX (Programmable Search Engine ID)" autocomplete="off">
+                    <input type="text" id="ai-google-worker" class="glass-input" placeholder="رابط وسيط Cloudflare Worker (اختياري)" autocomplete="off">
+                    <small class="ai-model-note">بدون مفتاح جوجل يعمل البحث تلقائياً عبر ويكيبيديا العربية والإنجليزية. مفتاح جوجل المجاني يعطي 100 بحث يومياً، والوسيط يخفي المفتاح عن المتصفح.</small>
+                    <div id="ai-google-status" class="ai-model-status" aria-live="polite"></div>
+                </div>
             </div>
             <div class="input-group ai-mood-group">
                 <i class="input-icon fas fa-face-smile"></i>
@@ -331,6 +340,6 @@
         </div>
     </div>
 
-    <script type="module" src="script.js?v=11"></script>
+    <script type="module" src="script.js?v=12"></script>
 </body>
 </html>

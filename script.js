@@ -61,6 +61,144 @@ import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebas
                 .replace(/'/g, '&#39;');
         }
 
+        function updateGoogleSearchStatus() {
+            const status = document.getElementById('ai-google-status');
+            if (!status) return;
+            const { key, cx, worker } = getSearchSettings();
+            if (worker) status.textContent = '✅ البحث يمر عبر وسيط Cloudflare (المفتاح يبقى مخفياً).';
+            else if (key && cx) status.textContent = '✅ بحث جوجل مفعّل مباشرة من المتصفح (100 بحث مجاني يومياً).';
+            else if (key || cx) status.textContent = '⚠️ أكمل الحقلين: مفتاح Google و CX.';
+            else status.textContent = 'ℹ️ بدون مفتاح جوجل: البحث يعمل عبر ويكيبيديا (عربي + إنجليزي).';
+        }
+
+        function getSearchSettings() {
+            const cfg = dbAiConfig || {};
+            return {
+                key: String(cfg.googleKey || '').trim(),
+                cx: String(cfg.googleCx || '').trim(),
+                worker: String(cfg.googleWorker || '').trim()
+            };
+        }
+
+        function normaliseSearchItems(payload, mode) {
+            const raw = Array.isArray(payload?.items) ? payload.items
+                : Array.isArray(payload?.data) ? payload.data
+                    : Array.isArray(payload?.results) ? payload.results : [];
+            return raw.map(item => ({
+                title: String(item?.title || item?.name || '').slice(0, 120),
+                link: sanitizeURL(item?.link || item?.url || ''),
+                snippet: String(item?.snippet || item?.description || '').replace(/\s+/g, ' ').slice(0, 200),
+                thumb: sanitizeURL(item?.thumbnail?.url || item?.image?.src || item?.pagemap?.cse_thumbnail?.[0]?.src || item?.thumb || '')
+            })).filter(item => item.link);
+        }
+
+        async function googleSearch(query, mode, page) {
+            const { key, cx, worker } = getSearchSettings();
+            const trimmed = String(query || '').trim().slice(0, 120);
+            if (trimmed.length < 2) return null;
+            const wanted = mode === 'images' ? 'images' : 'web';
+            const targetPage = Math.min(5, Math.max(1, Number(page) || 1));
+            try {
+                if (worker && /^https:\/\//i.test(worker)) {
+                    const url = `${worker}${worker.includes('?') ? '&' : '?'}q=${encodeURIComponent(trimmed)}&type=${wanted}&page=${targetPage}`;
+                    const payload = await fetchJsonWithTimeout(url, 15000);
+                    const items = normaliseSearchItems(payload, wanted);
+                    if (items.length) return { engine: 'google', items };
+                }
+                if (key && cx) {
+                    const params = new URLSearchParams({ key, cx, q: trimmed, num: '10' });
+                    if (wanted === 'images') params.set('searchType', 'image');
+                    if (targetPage > 1) params.set('start', String((targetPage - 1) * 10 + 1));
+                    const payload = await fetchJsonWithTimeout(`https://www.googleapis.com/customsearch/v1?${params.toString()}`, 15000);
+                    const items = normaliseSearchItems(payload, wanted);
+                    if (items.length) return { engine: 'google', items };
+                }
+            } catch (error) {
+                console.warn('Google search unavailable:', error);
+            }
+            return null;
+        }
+
+        async function openSearch(query, mode, page) {
+            const trimmed = String(query || '').trim().slice(0, 120);
+            const items = [];
+            if (mode === 'images') {
+                const candidates = await collectMediaCandidates('image', [trimmed], 8);
+                return {
+                    engine: 'open',
+                    items: candidates.map(item => ({ title: item.title || trimmed, link: item.url, thumb: item.url, snippet: '' }))
+                };
+            }
+            const wikiSnippet = value => String(value || '').replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 200);
+            const seen = new Set();
+            const addItem = item => {
+                if (!item?.link || seen.has(item.link) || items.length >= 10) return;
+                seen.add(item.link);
+                items.push(item);
+            };
+            try {
+                const rest = await fetchJsonWithTimeout(`https://api.wikimedia.org/core/v1/wikipedia/ar/search/page?q=${encodeURIComponent(trimmed)}&limit=6`, 12000);
+                (rest?.pages || []).forEach(page => {
+                    addItem({
+                        title: String(page.title || '').slice(0, 120),
+                        link: `https://ar.wikipedia.org/wiki/${encodeURIComponent(String(page.key || page.title || '').replace(/ /g, '_'))}`,
+                        snippet: String(page.description || page.excerpt || '').slice(0, 200)
+                    });
+                });
+            } catch (error) {
+                console.warn('Wikimedia search failed:', error);
+            }
+            try {
+                const arabic = await fetchJsonWithTimeout(`https://ar.wikipedia.org/w/api.php?action=query&format=json&origin=*&list=search&srsearch=${encodeURIComponent(trimmed)}&srlimit=6&srprop=snippet`, 12000);
+                (arabic?.query?.search || []).forEach(entry => {
+                    addItem({
+                        title: String(entry.title || '').slice(0, 120),
+                        link: `https://ar.wikipedia.org/wiki/${encodeURIComponent(String(entry.title || '').replace(/ /g, '_'))}`,
+                        snippet: wikiSnippet(entry.snippet)
+                    });
+                });
+            } catch (error) {
+                console.warn('Wikipedia search failed:', error);
+            }
+            try {
+                const english = await fetchJsonWithTimeout(`https://en.wikipedia.org/w/api.php?action=query&format=json&origin=*&list=search&srsearch=${encodeURIComponent(trimmed)}&srlimit=4&srprop=snippet`, 12000);
+                (english?.query?.search || []).forEach(entry => {
+                    addItem({
+                        title: String(entry.title || '').slice(0, 120),
+                        link: `https://en.wikipedia.org/wiki/${encodeURIComponent(String(entry.title || '').replace(/ /g, '_'))}`,
+                        snippet: wikiSnippet(entry.snippet)
+                    });
+                });
+            } catch (error) {
+                console.warn('English Wikipedia search failed:', error);
+            }
+            return { engine: 'open', items: items.filter(item => item.link).slice(0, 10) };
+        }
+
+        async function runSearch(query, mode = 'web', page = 1) {
+            const google = await googleSearch(query, mode, page);
+            if (google && google.items.length) return google;
+            return openSearch(query, mode, page);
+        }
+
+        function renderWebCard(web) {
+            const items = (Array.isArray(web?.items) ? web.items : [])
+                .map(item => {
+                    const link = sanitizeURL(item?.link);
+                    if (!link) return '';
+                    const title = sanitizeHTML(String(item?.title || link).slice(0, 120));
+                    const snippet = sanitizeHTML(String(item?.snippet || '').replace(/\s+/g, ' ').slice(0, 200));
+                    let host = '';
+                    try { host = new URL(link).hostname.replace(/^www\./, ''); } catch { host = ''; }
+                    return `<a class="search-result" href="${sanitizeHTML(link)}" target="_blank" rel="noopener noreferrer"><span class="search-result-title">${title}</span>${snippet ? `<span class="search-result-snippet">${snippet}</span>` : ''}${host ? `<span class="search-result-host">${sanitizeHTML(host)}</span>` : ''}</a>`;
+                })
+                .filter(Boolean)
+                .join('');
+            if (!items) return '';
+            const engine = web?.engine === 'google' ? 'جوجل' : 'بحث مفتوح المصدر';
+            return `<div class="web-card"><div class="web-head"><i class="fas fa-globe"></i><span>نتائج الويب · ${engine}</span></div><div class="search-results">${items}</div></div>`;
+        }
+
         function renderResultsCard(results, caption) {
             const kind = ['image', 'audio', 'video'].includes(results.kind) ? results.kind : 'image';
             const items = (Array.isArray(results.items) ? results.items : [])
@@ -833,6 +971,8 @@ import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebas
                     } else if (m.file && m.file.content) {
                         fileRegistry.set(child.key, m.file);
                         content = renderFileCard(child.key, m.file, m.txt);
+                    } else if (m.web && Array.isArray(m.web.items) && m.web.items.length) {
+                        content = renderWebCard(m.web);
                     } else if (m.results && Array.isArray(m.results.items) && m.results.items.length) {
                         content = renderResultsCard(m.results, m.caption || m.txt);
                     } else if (m.media === 'audio' || (!m.media && isAudioUrl(m.txt))) {
@@ -1633,6 +1773,15 @@ import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebas
                 });
             };
             if (kind === 'image') {
+                const googleImages = await googleSearch(queries[0] || '', 'images', 1);
+                if (googleImages?.items?.length) {
+                    return googleImages.items.slice(0, limit).map(item => ({
+                        url: item.link,
+                        title: item.title,
+                        thumb: item.thumb || item.link,
+                        source: 'google'
+                    }));
+                }
                 push(await searchOpenverse(queries, 'images'));
                 push(await searchCommonsMedia(queries, 'image'));
                 push(await searchCommonsImageCandidates(queries));
@@ -1821,6 +1970,10 @@ import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebas
                     if (me && me.user === 'reza') {
                         document.getElementById('ai-name').value = dbAiConfig.name || '';
                         document.getElementById('ai-model').value = dbAiConfig.model || '';
+                        document.getElementById('ai-google-key').value = dbAiConfig.googleKey || '';
+                        document.getElementById('ai-google-cx').value = dbAiConfig.googleCx || '';
+                        document.getElementById('ai-google-worker').value = dbAiConfig.googleWorker || '';
+                        updateGoogleSearchStatus();
                         document.getElementById('ai-mood').value = dbAiConfig.mood || 'auto';
                         document.getElementById('ai-avatar').value = dbAiConfig.avatar || '';
                         if (dbAiConfig.avatar) {
@@ -1848,6 +2001,7 @@ import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebas
 
         window.openAiConfig = () => {
             document.getElementById('modal-ai').style.display = 'flex';
+            updateGoogleSearchStatus();
             document.getElementById('ai-model-search').focus();
         };
 
@@ -1867,7 +2021,14 @@ import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebas
                     if (!response.ok) throw new Error(`OpenRouter returned ${response.status}`);
                     const payload = await response.json();
                     if (!Array.isArray(payload.data)) throw new Error('OpenRouter model list was not an array');
-                    openRouterModelsCache = payload.data.filter(model => model && typeof model.id === 'string' && typeof model.name === 'string');
+                    openRouterModelsCache = payload.data
+                        .filter(model => model && typeof model.id === 'string' && typeof model.name === 'string')
+                        .map(model => ({
+                            ...model,
+                            isFree: modelIsFree(model),
+                            strength: modelStrength(model)
+                        }))
+                        .sort((a, b) => b.strength - a.strength);
                     openRouterModelsCachedAt = Date.now();
                     return openRouterModelsCache;
                 } finally {
@@ -1876,6 +2037,42 @@ import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebas
                 }
             })();
             return openRouterModelsPromise;
+        }
+
+        function modelIsFree(model) {
+            const price = model?.pricing || {};
+            const zero = value => value === undefined || value === null || String(value).trim() === '' || Number(value) === 0;
+            const outputs = model?.architecture?.output_modalities || [];
+            const isChat = !outputs.length || (outputs.includes('text') && !outputs.includes('audio'));
+            const notUtility = !/(content-safety|moderation|guard|embed|rerank|whisper|tts|image-gen|dall-e|lyria)/i.test(String(model?.id || ''));
+            return zero(price.prompt) && zero(price.completion) && isChat && notUtility;
+        }
+
+        function modelStrength(model) {
+            const text = `${model?.id || ''} ${model?.name || ''}`.toLowerCase();
+            let score = 0;
+            const tiers = [
+                [/(ultra|opus|550b|405b|pro\b|max\b|thinking|reasoning|r1|o3|o4|gpt-5|claude-4|gemini-2\.5-pro)/, 60],
+                [/(super|120b|70b|72b|large|plus|flash|gpt-4o|sonnet|deepseek-v3|qwen3|llama-4|mistral-large|command-a)/, 40],
+                [/(mini|nano|small|tiny|lite|haiku|2b|3b|4b|7b|8b)/, -18]
+            ];
+            tiers.forEach(([pattern, weight]) => { if (pattern.test(text)) score += weight; });
+            const sizes = [...text.matchAll(/(\d+(?:\.\d+)?)b\b/g)].map(match => Number(match[1])).filter(Number.isFinite);
+            const size = sizes.length ? Math.max(...sizes) : 0;
+            score += Math.min(42, Math.log2(Math.max(1, size)) * 6);
+            const context = Number(model?.context_length) || 0;
+            score += Math.min(22, context / 55000);
+            const created = Number(model?.created) || 0;
+            if (created > 1_600_000_000) score += Math.min(14, (created - 1_600_000_000) / 6_000_000);
+            if (/\bvl\b|vision|omni|audio/.test(text)) score += 2;
+            return Math.round(score * 10) / 10;
+        }
+
+        function modelTierLabel(score) {
+            if (score >= 110) return { text: 'قوي جداً', className: 'tier-top' };
+            if (score >= 70) return { text: 'قوي', className: 'tier-high' };
+            if (score >= 40) return { text: 'متوازن', className: 'tier-mid' };
+            return { text: 'خفيف', className: 'tier-low' };
         }
 
         function formatModelPrice(price) {
@@ -1890,9 +2087,10 @@ import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebas
             const results = document.getElementById('ai-model-results');
             const status = document.getElementById('ai-model-status');
             const normalizedQuery = query.trim().toLowerCase();
+            const freeModels = models.filter(model => model.isFree);
             const matches = (normalizedQuery
-                ? models.filter(model => `${model.name} ${model.id}`.toLowerCase().includes(normalizedQuery))
-                : models
+                ? freeModels.filter(model => `${model.name} ${model.id}`.toLowerCase().includes(normalizedQuery))
+                : freeModels
             ).slice(0, 10);
             results.replaceChildren();
 
@@ -1901,7 +2099,9 @@ import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebas
                 return;
             }
 
-            status.textContent = normalizedQuery ? `نماذج مطابقة: ${matches.length}${matches.length === 10 ? ' (أول 10)' : ''}` : 'نماذج مقترحة من الكتالوج:';
+            status.textContent = normalizedQuery
+                ? `نماذج مجانية مطابقة: ${matches.length}${matches.length === 10 ? ' (أول 10)' : ''} · مرتبة من الأقوى`
+                : `أقوى ${matches.length} نموذج مجاني · من الأقوى إلى الأضعف`;
             for (const model of matches) {
                 const option = document.createElement('div');
                 option.className = 'ai-model-option';
@@ -1914,11 +2114,18 @@ import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebas
                 const id = document.createElement('span');
                 id.className = 'ai-model-option-id';
                 id.textContent = model.id;
+                const tier = modelTierLabel(Number(model.strength) || 0);
+                const badge = document.createElement('span');
+                badge.className = `ai-model-badge ${tier.className}`;
+                badge.textContent = tier.text;
+                const freeBadge = document.createElement('span');
+                freeBadge.className = 'ai-model-badge tier-free';
+                freeBadge.textContent = 'مجاني';
                 const meta = document.createElement('span');
                 meta.className = 'ai-model-option-meta';
                 const context = Number(model.context_length);
                 const contextText = Number.isFinite(context) ? `سياق ${context.toLocaleString('en-US')}` : 'السياق غير معلن';
-                meta.textContent = `دخول ${formatModelPrice(model.pricing?.prompt)} / مليون · خروج ${formatModelPrice(model.pricing?.completion)} / مليون · ${contextText}`;
+                meta.textContent = `${contextText} · قوة ${Number(model.strength) || 0}`;
 
                 const actions = document.createElement('div');
                 actions.className = 'ai-model-option-actions';
@@ -1934,7 +2141,10 @@ import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebas
                 backupButton.addEventListener('click', () => window.addModelToChain(model.id, model.name));
                 actions.append(useButton, backupButton);
 
-                option.append(title, id, meta, actions);
+                const head = document.createElement('div');
+                head.className = 'ai-model-option-head';
+                head.append(title, freeBadge, badge);
+                option.append(head, id, meta, actions);
                 results.appendChild(option);
             }
         }
@@ -1999,7 +2209,8 @@ import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebas
         window.saveAiConfig = async () => {
             const name = document.getElementById('ai-name').value.trim() || 'NAZ Ai';
             const keys = collectAiKeyDraft();
-            const model = document.getElementById('ai-model').value.trim() || 'meta-llama/llama-3-8b-instruct';
+            const fallbackFree = (openRouterModelsCache || []).find(item => item.isFree);
+            const model = document.getElementById('ai-model').value.trim() || fallbackFree?.id || 'meta-llama/llama-3.3-70b-instruct:free';
             const mood = document.getElementById('ai-mood').value || 'auto';
             const avatar = document.getElementById('ai-avatar').value.trim() || getDefaultAvatarUrl('NAZ');
             
@@ -2021,11 +2232,15 @@ import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebas
                     apiKeys: keys,
                     model, 
                     models: aiModelChain.slice(0, 12),
+                    googleKey: document.getElementById('ai-google-key').value.trim(),
+                    googleCx: document.getElementById('ai-google-cx').value.trim(),
+                    googleWorker: document.getElementById('ai-google-worker').value.trim(),
                     mood,
                     avatar,
                     keyStatus: aiKeyStatus,
                     _authToken: token
                 });
+                updateGoogleSearchStatus();
                 showNotification(`تم الحفظ: ${keys.length} مفتاح · ${aiModelChain.length} نموذج احتياطي`);
                 document.getElementById('modal-ai').style.display = 'none';
             } catch (error) {
@@ -2079,6 +2294,36 @@ import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebas
 
             const requestKind = detectRequestKind(safeUserMessage).kind;
             console.log('🧭 NAZ request kind:', requestKind);
+
+            if (requestKind === 'web') {
+                try {
+                    showNotification('NAZ تبحث في الويب... 🌐');
+                    const term = safeUserMessage
+                        .replace(/@(?:naz|ناز)/giu, ' ')
+                        .replace(/(ابحث|أبحث|ابحثي|بحث|دور|فتش|لقيلي|جيبلي|هات|عن|search|look up)/giu, ' ')
+                        .replace(/\s+/g, ' ')
+                        .trim()
+                        .slice(0, 90) || safeUserMessage.slice(0, 90);
+                    const searchResult = await runSearch(term, 'web', 1);
+                    if (searchResult.items.length) {
+                        await push(ref(db, 'messages'), {
+                            uid: 'naz_ai',
+                            name: aiName,
+                            txt: '',
+                            time: serverTimestamp(),
+                            avatar: aiAvatar,
+                            caption: `هذي نتائج البحث عن ${term} · ${searchResult.items.length} نتيجة`.slice(0, 160),
+                            web: { engine: searchResult.engine, items: searchResult.items.slice(0, 8) },
+                            reply: { name: safeUserName, txt: safeUserMessage.slice(0, 120) }
+                        });
+                        showNotification(`✅ ناز جابت ${searchResult.items.length} نتيجة`);
+                        return;
+                    }
+                    showNotification('⚠️ ما لقيت نتائج، خلي ناز ترد نصياً');
+                } catch (error) {
+                    console.warn('Web search route failed, falling back to text:', error);
+                }
+            }
 
             if (requestKind === 'image' || requestKind === 'audio' || requestKind === 'video') {
                 try {
@@ -2465,6 +2710,17 @@ import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebas
             }
         });
 
+        // بحث الأدوات المشترك: Enter داخل حقل البحث يشغّل البحث
+        document.addEventListener('keydown', event => {
+            if (event.key !== 'Enter' || event.isComposing) return;
+            const input = event.target?.closest?.('[data-tool-search-input]');
+            if (!input) return;
+            event.preventDefault();
+            const card = input.closest('[data-tool-card]');
+            const trigger = card?.querySelector('[data-tool-action="search"][data-tool-mode]');
+            if (trigger) trigger.click();
+        });
+
         // === نظام مؤشر الكتابة ===
         let typingTimeout;
         document.getElementById('msg-input').addEventListener('input', () => {
@@ -2526,6 +2782,7 @@ import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebas
             if (trigger.dataset.toolValue !== undefined) payload.value = trigger.dataset.toolValue;
             if (trigger.dataset.toolMode) payload.mode = trigger.dataset.toolMode;
             if (trigger.dataset.toolItem !== undefined) payload.item = trigger.dataset.toolItem;
+            if (trigger.dataset.toolPage) payload.page = trigger.dataset.toolPage;
             card.querySelectorAll('[data-tool-input]').forEach(input => {
                 payload.fields[input.dataset.toolInput] = input.value;
             });
@@ -2534,9 +2791,54 @@ import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebas
             return payload;
         }
 
+        async function writeToolState(msgKey, state) {
+            try {
+                await set(ref(db, `messages/${msgKey}/toolState`), state);
+            } catch (error) {
+                console.error('Tool state write failed:', error);
+                showNotification('❌ تعذّر تحديث الأداة');
+            }
+        }
+
+        async function runSearchToolAction(msgKey, entry, payload) {
+            const current = entry.state || {};
+            const typed = String(payload?.fields?.query ?? '').trim().slice(0, 110);
+            const query = typed || String(current.query || '').slice(0, 110);
+            if (query.length < 2) {
+                showNotification('⚠️ اكتب كلمة للبحث أولاً');
+                return;
+            }
+            const mode = payload?.mode === 'images' ? 'images' : 'web';
+            const page = payload?.page === 'next' ? Math.min(5, (Number(current.page) || 1) + 1) : 1;
+            await writeToolState(msgKey, { ...current, query, mode, page, status: 'loading', results: [], updatedBy: me.name });
+            try {
+                const { engine, items } = await runSearch(query, mode, page);
+                const results = items.slice(0, 10);
+                await writeToolState(msgKey, {
+                    ...current,
+                    query,
+                    mode,
+                    page,
+                    engine,
+                    results,
+                    status: results.length ? 'done' : 'empty',
+                    updatedBy: me.name
+                });
+                showNotification(results.length ? `✅ ${results.length} نتيجة` : '⚠️ ما لقيت نتائج مطابقة');
+            } catch (error) {
+                console.error('Shared search failed:', error);
+                await writeToolState(msgKey, { ...current, query, mode, page, status: 'empty', results: [], updatedBy: me.name });
+                showNotification('⚠️ تعذّر البحث الآن');
+            }
+        }
+
         async function runToolAction(msgKey, action, payload) {
             const entry = toolRegistry.get(msgKey);
             if (!entry || !me) return;
+            if (entry.tool.kind === 'search' && action === 'search') {
+                await runSearchToolAction(msgKey, entry, payload);
+                return;
+            }
             try {
                 await runTransaction(ref(db, `messages/${msgKey}/toolState`), current => {
                     const next = applyToolAction(
