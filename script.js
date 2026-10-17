@@ -1,7 +1,7 @@
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js";
         import { getAnalytics } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-analytics.js";
         import { getDatabase, ref, set, get, push, onValue, query, limitToLast, remove, update, runTransaction, serverTimestamp, onDisconnect } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-database.js";
-        import { TOOL_KINDS, renderToolCard, applyToolAction, parseToolResponse, isToolRequest, buildToolPrompt, isImageRequest, buildImageQueryPrompt, detectRequestKind, buildMediaQueryPrompt, parseMediaPlan, wantsMultipleResults, buildFilePrompt, parseFileResponse, mountToolTimers, clearToolTimers, mountToolCanvases, clearToolCanvases } from './naz-tools.js?v=33';
+        import { TOOL_KINDS, renderToolCard, applyToolAction, parseToolResponse, isToolRequest, buildToolPrompt, isImageRequest, buildImageQueryPrompt, detectRequestKind, buildMediaQueryPrompt, parseMediaPlan, wantsMultipleResults, buildFilePrompt, parseFileResponse, mountToolTimers, clearToolTimers, mountToolCanvases, clearToolCanvases } from './naz-tools.js?v=34';
 
         // ============================================
         // 🔐 Security Utilities
@@ -584,6 +584,7 @@ import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebas
 
         let app, db, analytics;
         let me = null, activeMsg = null, isEdit = false, replyData = null, forwardData = null;
+        let allUsersMap = {}; // خريطة المستخدمين الحيّة (لأجل صور المتفاعلين)
         let dbAiConfig = null;
         const processedAiMsgs = new Set();
         const KEY_STATUS_STORAGE = 'naz_key_status_v1';
@@ -923,7 +924,7 @@ import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebas
                         const stored = record && typeof record === 'object' ? record.name : '';
                         const safeUid = sanitizeHTML(uid);
                         const storedAvatar = record && typeof record === 'object' ? record.avatar : '';
-                        const liveAvatar = allUsers[uid] && allUsers[uid].avatar;
+                        const liveAvatar = allUsersMap[uid] && allUsersMap[uid].avatar;
                         const avatar = sanitizeURL(storedAvatar || liveAvatar || '') || getDefaultAvatarUrl(safeUid);
                         return `<div class="reaction-person" role="button" tabindex="0" onclick="event.stopPropagation(); openReactorProfile('${safeUid}')" title="افتح ملف ${sanitizeHTML(stored || uid)}">
                             <img class="reaction-person-avatar" src="${sanitizeHTML(avatar)}" alt="" loading="lazy" onerror="this.src='${getDefaultAvatarUrl(safeUid)}'">
@@ -3121,6 +3122,7 @@ import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebas
 
         function loadMembers() {
             onValue(ref(db, 'users'), snap => {
+                allUsersMap = snap.val() || {};
                 const list = document.getElementById('members-list');
                 list.innerHTML = '';
                 let onlineCount = 0;
@@ -3568,7 +3570,7 @@ import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebas
         window.openReactorProfile = async (uid) => {
             const safe = String(uid || '').replace(/[^A-Za-z0-9_-]/g, '');
             if (!safe) return;
-            let info = allUsers[safe] || null;
+            let info = allUsersMap[safe] || null;
             if (!info) {
                 try {
                     const snap = await get(ref(db, 'users/' + safe));
