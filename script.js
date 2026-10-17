@@ -1,7 +1,7 @@
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js";
         import { getAnalytics } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-analytics.js";
         import { getDatabase, ref, set, get, push, onValue, query, limitToLast, remove, update, runTransaction, serverTimestamp, onDisconnect } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-database.js";
-        import { TOOL_KINDS, renderToolCard, applyToolAction, parseToolResponse, isToolRequest, buildToolPrompt, isImageRequest, buildImageQueryPrompt, detectRequestKind, buildMediaQueryPrompt, parseMediaPlan, wantsMultipleResults, buildFilePrompt, parseFileResponse, mountToolTimers, clearToolTimers, mountToolCanvases, clearToolCanvases } from './naz-tools.js?v=23';
+        import { TOOL_KINDS, renderToolCard, applyToolAction, parseToolResponse, isToolRequest, buildToolPrompt, isImageRequest, buildImageQueryPrompt, detectRequestKind, buildMediaQueryPrompt, parseMediaPlan, wantsMultipleResults, buildFilePrompt, parseFileResponse, mountToolTimers, clearToolTimers, mountToolCanvases, clearToolCanvases } from './naz-tools.js?v=24';
 
         // ============================================
         // 🔐 Security Utilities
@@ -90,7 +90,7 @@ import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebas
                 if (after) data = after[1];
             }
             if (!data) {
-                data = value.replace(/(سوي|سوّي|سويلي|سولي|اعمل|اعملي|اعمللي|اصنع|صمم|أنشئ|انشئ|ارسل|أرسل|اريد|أريد|بدي|ناز|لي|من فضلك|qr|كيو\s?ار|كيوار|بار\s?كود|باركود|barcode|كود|رمز)/giu, ' ');
+                data = value.replace(/(سوي|سوّي|سويلي|سولي|اعمل|اعملي|اعمللي|اصنع|صمم|أنشئ|انشئ|ارسل|أرسل|اريد|أريد|بدي|ناز|لي|من فضلك|لكلمة|للكلمة|كلمة|الكلمة|نص|لنص|للرابط|qr|كيو\s?ار|كيوار|بار\s?كود|باركود|barcode|كود|رمز)/giu, ' ');
             }
             data = data.replace(/["'»«”“]+$/g, '').replace(/\s+/g, ' ').trim().slice(0, 300);
             if (data.length < 2) return null;
@@ -2598,15 +2598,32 @@ import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebas
                         const barUrl = socialRequest.platform === 'instagram'
                             ? `https://www.instagram.com/${encodeURIComponent(socialRequest.user)}/`
                             : `https://www.tiktok.com/@${encodeURIComponent(socialRequest.user)}`;
-                        await push(ref(db, 'messages'), {
+                        const fbMessage = {
                             uid: 'naz_ai',
                             name: aiName,
-                            txt: `ما كدرت أجيب بيانات @${socialRequest.user} من ${socialRequest.label} (المنصة تحجب السيرفرات). افتح الحساب من الرابط: ${barUrl}`,
+                            txt: `ما كدرت أجيب بيانات @${socialRequest.user} من ${socialRequest.label} (المنصة تحجب السيرفرات). هذا الحساب مباشرة: ${barUrl}`,
                             time: serverTimestamp(),
                             avatar: aiAvatar,
                             reply: { name: safeUserName, txt: safeUserMessage.slice(0, 120) }
-                        });
-                        showNotification('⚠️ المنصة حجبت الجلب، أرسلت رابط الحساب');
+                        };
+                        try {
+                            const alt = await runSearch(`${socialRequest.user} ${socialRequest.label}`, 'web', 1);
+                            if (alt.items.length) {
+                                fbMessage.txt = '';
+                                fbMessage.web = {
+                                    engine: alt.engine,
+                                    items: alt.items.slice(0, 5),
+                                    query: socialRequest.user,
+                                    extraLink: barUrl,
+                                    extraLabel: `فتح ${socialRequest.label}`
+                                };
+                                fbMessage.caption = `عن @${socialRequest.user} · ${socialRequest.label}`.slice(0, 160);
+                            }
+                        } catch (altError) {
+                            console.warn('Social fallback search failed:', altError);
+                        }
+                        await push(ref(db, 'messages'), fbMessage);
+                        showNotification('⚠️ المنصة حجبت الجلب، أرسلت بدائل + الرابط');
                         return;
                     }
                     const platformSearchUrl = socialRequest.platform === 'instagram'
