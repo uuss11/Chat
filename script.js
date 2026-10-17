@@ -1,7 +1,7 @@
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js";
         import { getAnalytics } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-analytics.js";
         import { getDatabase, ref, set, get, push, onValue, query, limitToLast, remove, update, runTransaction, serverTimestamp, onDisconnect } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-database.js";
-        import { TOOL_KINDS, renderToolCard, applyToolAction, parseToolResponse, isToolRequest, buildToolPrompt, isImageRequest, buildImageQueryPrompt, detectRequestKind, buildMediaQueryPrompt, parseMediaPlan, wantsMultipleResults, buildFilePrompt, parseFileResponse, mountToolTimers, clearToolTimers, mountToolCanvases, clearToolCanvases } from './naz-tools.js?v=32';
+        import { TOOL_KINDS, renderToolCard, applyToolAction, parseToolResponse, isToolRequest, buildToolPrompt, isImageRequest, buildImageQueryPrompt, detectRequestKind, buildMediaQueryPrompt, parseMediaPlan, wantsMultipleResults, buildFilePrompt, parseFileResponse, mountToolTimers, clearToolTimers, mountToolCanvases, clearToolCanvases } from './naz-tools.js?v=33';
 
         // ============================================
         // 🔐 Security Utilities
@@ -918,12 +918,20 @@ import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebas
                 const isOpen = openReactionDetails.has(msgKey);
                 html += `<span class="reaction-details-btn ${isOpen ? 'is-open' : ''}" role="button" tabindex="0" aria-expanded="${isOpen}" onclick="event.stopPropagation(); toggleReactionDetails(this)" data-msg-key="${msgKey}" title="من تفاعل؟"><i class="fas fa-chevron-down"></i><span>${total}</span></span>`;
                 html += `<div class="reaction-details" ${isOpen ? '' : 'hidden'}>${groups.map(group => {
-                    const names = group.users.map(uid => {
+                    const rows = group.users.map(uid => {
                         const record = reactions[group.emoji][uid];
                         const stored = record && typeof record === 'object' ? record.name : '';
-                        return sanitizeHTML(stored || uid);
-                    });
-                    return `<div class="reaction-detail-row"><span class="r-emoji">${group.emoji}</span><span class="r-names">${names.join('، ')}</span></div>`;
+                        const safeUid = sanitizeHTML(uid);
+                        const storedAvatar = record && typeof record === 'object' ? record.avatar : '';
+                        const liveAvatar = allUsers[uid] && allUsers[uid].avatar;
+                        const avatar = sanitizeURL(storedAvatar || liveAvatar || '') || getDefaultAvatarUrl(safeUid);
+                        return `<div class="reaction-person" role="button" tabindex="0" onclick="event.stopPropagation(); openReactorProfile('${safeUid}')" title="افتح ملف ${sanitizeHTML(stored || uid)}">
+                            <img class="reaction-person-avatar" src="${sanitizeHTML(avatar)}" alt="" loading="lazy" onerror="this.src='${getDefaultAvatarUrl(safeUid)}'">
+                            <span class="reaction-person-name">${sanitizeHTML(stored || uid)}</span>
+                            <span class="reaction-person-emoji">${group.emoji}</span>
+                        </div>`;
+                    }).join('');
+                    return `<div class="reaction-detail-group"><span class="reaction-group-emoji">${group.emoji}</span><span class="reaction-group-count">${group.count}</span><div class="reaction-group-people">${rows}</div></div>`;
                 }).join('')}</div>`;
             }
             html += `<span class="reaction-add-btn" onclick="event.stopPropagation(); showReactionPicker('${msgKey}', this)"><i class="far fa-smile"></i></span></div>`;
@@ -3198,11 +3206,24 @@ import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebas
             }
         });
 
-        window.toggleSearch = () => {
+        window.toggleSearch = (forceOpen) => {
             const bar = document.getElementById('search-bar');
-            bar.style.display = bar.style.display === 'none' || bar.style.display === '' ? 'block' : 'none';
-            if (bar.style.display === 'block') document.getElementById('search-input').focus();
+            const btn = document.getElementById('search-toggle-btn');
+            if (!bar) return;
+            const willOpen = typeof forceOpen === 'boolean' ? forceOpen : !bar.classList.contains('is-open');
+            bar.classList.toggle('is-open', willOpen);
+            bar.style.display = willOpen ? 'flex' : '';
+            if (btn) btn.setAttribute('aria-expanded', String(willOpen));
+            const input = document.getElementById('search-input');
+            if (willOpen && input) setTimeout(() => input.focus(), 120);
+            if (!willOpen && input && input.value) {
+                input.value = '';
+                input.dispatchEvent(new Event('input', { bubbles: true }));
+            }
         };
+        document.getElementById('search-input')?.addEventListener('keydown', e => {
+            if (e.key === 'Escape') window.toggleSearch(false);
+        });
 
         document.getElementById('search-input')?.addEventListener('input', (e) => {
             const term = e.target.value.toLowerCase();
@@ -3500,6 +3521,28 @@ import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebas
             if (actionButton) actionButton.click();
         });
 
+        window.playReactionBurst = (msgId, emoji) => {
+            const host = document.getElementById('msg-' + msgId);
+            if (!host || !emoji) return;
+            const old = host.querySelector('.reaction-burst');
+            if (old) old.remove();
+            const burst = document.createElement('div');
+            burst.className = 'reaction-burst';
+            const count = 12;
+            for (let i = 0; i < count; i++) {
+                const span = document.createElement('span');
+                span.className = 'reaction-burst-emoji';
+                span.textContent = emoji;
+                span.style.setProperty('--dx', ((Math.random() * 96) - 48).toFixed(1) + 'px');
+                span.style.setProperty('--rot', ((Math.random() * 140) - 70).toFixed(0) + 'deg');
+                span.style.setProperty('--dur', (850 + Math.random() * 750).toFixed(0) + 'ms');
+                span.style.animationDelay = (Math.random() * 280).toFixed(0) + 'ms';
+                span.style.fontSize = (0.85 + Math.random() * 0.85).toFixed(2) + 'rem';
+                burst.appendChild(span);
+            }
+            host.appendChild(burst);
+            setTimeout(() => burst.remove(), 2400);
+        };
         window.toggleReaction = async (msgId, emoji) => {
             if (!me) return;
             const reactionPath = `messages/${msgId}/reactions/${emoji}/${me.user}`;
@@ -3508,12 +3551,64 @@ import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebas
                 if (snap.exists()) {
                     await remove(ref(db, reactionPath));
                 } else {
-                    await set(ref(db, reactionPath), { name: me.name, time: Date.now() });
+                    await set(ref(db, reactionPath), { name: me.name, avatar: me.avatar || '', time: Date.now() });
+                    window.playReactionBurst(msgId, emoji);
+                    const chip = document.querySelector(`#msg-${msgId} .reaction-chip.my-reaction`);
+                    if (chip) {
+                        chip.classList.remove('just-added');
+                        void chip.offsetWidth;
+                        chip.classList.add('just-added');
+                    }
                 }
                 hideReactionPicker();
             } catch (e) {
                 console.error('Reaction error:', e);
             }
+        };
+        window.openReactorProfile = async (uid) => {
+            const safe = String(uid || '').replace(/[^A-Za-z0-9_-]/g, '');
+            if (!safe) return;
+            let info = allUsers[safe] || null;
+            if (!info) {
+                try {
+                    const snap = await get(ref(db, 'users/' + safe));
+                    info = snap.exists() ? snap.val() : null;
+                } catch (e) { info = null; }
+            }
+            const name = (info && info.name) || safe;
+            const avatar = sanitizeURL((info && info.avatar) || '') || getDefaultAvatarUrl(safe);
+            const online = Boolean(info && info.isOnline);
+            const bio = (info && info.bio) ? sanitizeHTML(info.bio) : '';
+            const lastSeen = info && info.lastSeen ? formatTime(info.lastSeen) : '';
+            const status = online ? '<span class="rp-status online"><span class="online-dot"></span> متصل الآن</span>' : `<span class="rp-status">غير متصل${lastSeen ? ' · آخر ظهور ' + lastSeen : ''}</span>`;
+            document.getElementById('reactor-profile')?.remove();
+            const box = document.createElement('div');
+            box.id = 'reactor-profile';
+            box.className = 'rp-overlay';
+            box.innerHTML = `<div class="rp-card" role="dialog" aria-modal="true">
+                <button class="rp-close" type="button" aria-label="إغلاق" onclick="document.getElementById('reactor-profile').remove()">
+                    <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" aria-hidden="true"><line x1="6" y1="6" x2="18" y2="18"></line><line x1="18" y1="6" x2="6" y2="18"></line></svg>
+                </button>
+                <img class="rp-avatar" src="${sanitizeHTML(avatar)}" alt="" onerror="this.src='${getDefaultAvatarUrl(safe)}'">
+                <div class="rp-name">${sanitizeHTML(name)}${safe === 'reza' ? ' 👑' : ''}</div>
+                <div class="rp-id">@${sanitizeHTML(safe)}</div>
+                ${status}
+                ${bio ? `<div class="rp-bio">${bio}</div>` : ''}
+                <div class="rp-actions">
+                    <button type="button" class="rp-btn primary" onclick="window.mentionReactor('${safe}')"><i class="fas fa-at"></i> منشن بالدردشة</button>
+                    <button type="button" class="rp-btn" onclick="document.getElementById('reactor-profile').remove()">إغلاق</button>
+                </div>
+            </div>`;
+            box.addEventListener('click', e => { if (e.target === box) box.remove(); });
+            document.body.appendChild(box);
+        };
+        window.mentionReactor = (uid) => {
+            const input = document.getElementById('msg-input');
+            if (input) {
+                input.value = (input.value ? input.value.trim() + ' ' : '') + '@' + uid + ' ';
+                input.focus();
+            }
+            document.getElementById('reactor-profile')?.remove();
         };
 
         window.showReactionPicker = (msgId, btnEl) => {

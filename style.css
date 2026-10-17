@@ -992,3 +992,52 @@ button:focus-visible, [role="button"]:focus-visible, a:focus-visible, input:focu
 @keyframes aiWave { 0%,100% { height: 22%; opacity: .65; } 50% { height: 100%; opacity: 1; } }
 @keyframes aiStatus { 0% { opacity: 0; } 6% { opacity: 1; } 30% { opacity: 1; } 36% { opacity: 0; } 100% { opacity: 0; } }
 @media (max-width: 520px) { .ai-gen-canvas { height: 170px; } .ai-gen-grid.multi { grid-template-columns: 1fr; } }
+
+/* ===== أيقونة البحث المنسدلة (v33) ===== */
+.search-toggle-btn svg { display: block; }
+.search-bar { max-height: 0; opacity: 0; overflow: hidden; transform: translateY(-8px); pointer-events: none; border-color: transparent !important; transition: max-height .3s cubic-bezier(.2,.8,.25,1), opacity .22s ease, transform .3s cubic-bezier(.2,.8,.25,1), padding .3s ease, border-color .2s ease; }
+.search-bar.is-open { max-height: 70px; opacity: 1; transform: none; pointer-events: auto; border-color: var(--glass-border) !important; }
+.search-close { background: transparent; border: 0; padding: 4px; display: flex; align-items: center; justify-content: center; cursor: pointer; color: var(--danger); }
+.search-close:hover { opacity: .75; }
+
+/* ===== قائمة المتفاعلين بالأسماء والصور (v33) ===== */
+.reaction-detail-group { display: flex; flex-direction: column; gap: 6px; padding: 6px 2px; }
+.reaction-detail-group + .reaction-detail-group { border-top: 1px solid rgba(255,255,255,.08); }
+.reaction-group-emoji { font-size: 1rem; line-height: 1; }
+.reaction-group-count { font-size: .62rem; color: var(--text-muted); }
+.reaction-group-people { display: flex; flex-wrap: wrap; gap: 6px; }
+.reaction-person { display: inline-flex; align-items: center; gap: 6px; padding: 3px 9px 3px 4px; border-radius: 999px; background: rgba(255,255,255,.06); border: 1px solid rgba(255,255,255,.1); cursor: pointer; transition: transform .16s ease, background .16s ease, border-color .16s ease; }
+.reaction-person:hover { background: rgba(255,255,255,.13); border-color: var(--primary); transform: translateY(-1px); }
+.reaction-person-avatar { width: 22px; height: 22px; border-radius: 50%; object-fit: cover; border: 1px solid rgba(255,255,255,.25); }
+.reaction-person-name { font-size: .72rem; color: var(--text-primary); max-width: 110px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.reaction-person-emoji { font-size: .8rem; }
+
+/* ===== نافذة ملف المتفاعل (v33) ===== */
+.rp-overlay { position: fixed; inset: 0; z-index: 100000; background: rgba(4,8,14,.62); backdrop-filter: blur(6px); display: flex; align-items: center; justify-content: center; padding: 18px; animation: rpFade .2s ease; }
+.rp-card { position: relative; width: min(340px, 92vw); border-radius: 22px; padding: 22px 18px 16px; text-align: center; background: linear-gradient(180deg, rgba(24,28,38,.98), rgba(14,17,24,.98)); border: 1px solid rgba(255,255,255,.14); box-shadow: 0 24px 60px rgba(0,0,0,.55); animation: rpPop .26s cubic-bezier(.2,.9,.3,1.1); }
+.rp-close { position: absolute; top: 10px; left: 10px; width: 28px; height: 28px; border-radius: 10px; border: 1px solid rgba(255,255,255,.14); background: rgba(255,255,255,.06); color: var(--text-secondary); display: flex; align-items: center; justify-content: center; cursor: pointer; }
+.rp-avatar { width: 82px; height: 82px; border-radius: 50%; object-fit: cover; border: 3px solid rgba(255,255,255,.18); box-shadow: 0 10px 30px rgba(0,0,0,.45); }
+.rp-name { margin-top: 10px; font-size: 1.05rem; font-weight: 800; }
+.rp-id { font-size: .78rem; color: var(--text-muted); direction: ltr; margin-top: 2px; }
+.rp-status { display: inline-flex; align-items: center; gap: 6px; margin-top: 8px; font-size: .74rem; color: var(--text-secondary); background: rgba(255,255,255,.06); border-radius: 999px; padding: 3px 10px; }
+.rp-status.online { color: #6ee7a8; }
+.rp-bio { margin-top: 10px; font-size: .8rem; color: var(--text-secondary); line-height: 1.6; max-height: 96px; overflow: auto; }
+.rp-actions { display: flex; gap: 8px; margin-top: 16px; }
+.rp-btn { flex: 1; padding: 9px 10px; border-radius: 12px; border: 1px solid rgba(255,255,255,.14); background: rgba(255,255,255,.06); color: var(--text-primary); font-family: inherit; font-size: .8rem; cursor: pointer; transition: transform .16s ease, background .16s ease; }
+.rp-btn:hover { transform: translateY(-1px); background: rgba(255,255,255,.12); }
+.rp-btn.primary { background: linear-gradient(135deg, rgba(0,212,255,.22), rgba(120,90,255,.22)); border-color: rgba(0,212,255,.35); }
+@keyframes rpFade { from { opacity: 0; } to { opacity: 1; } }
+@keyframes rpPop { from { opacity: 0; transform: translateY(12px) scale(.94); } to { opacity: 1; transform: none; } }
+
+/* ===== تطاير الإيموجي عند التفاعل (v33) ===== */
+.msg-container { position: relative; }
+.reaction-burst { position: absolute; left: 0; right: 0; bottom: 4px; height: 0; pointer-events: none; z-index: 6; overflow: visible; }
+.reaction-burst-emoji { position: absolute; left: 50%; bottom: 0; opacity: 0; line-height: 1; will-change: transform, opacity; animation: reactionFly var(--dur, 1150ms) cubic-bezier(.22,.72,.28,1) forwards; }
+.reaction-chip.just-added { animation: chipPop .5s cubic-bezier(.2,.9,.3,1.4); }
+@keyframes reactionFly {
+    0% { opacity: 0; transform: translate(-50%, 0) scale(.45) rotate(0deg); }
+    14% { opacity: 1; transform: translate(calc(-50% + var(--dx) * .22), -20px) scale(1.18) rotate(calc(var(--rot) * .3)); }
+    100% { opacity: 0; transform: translate(calc(-50% + var(--dx)), -132px) scale(.7) rotate(var(--rot)); }
+}
+@keyframes chipPop { 0% { transform: scale(1); } 45% { transform: scale(1.35); } 100% { transform: scale(1); } }
+@media (prefers-reduced-motion: reduce) { .reaction-burst-emoji { display: none; } }

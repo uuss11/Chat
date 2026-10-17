@@ -9,7 +9,7 @@
     <title>REZA | Ultra Chat Experience</title>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     <link href="https://fonts.googleapis.com/css2?family=Cairo:wght@300;400;500;600;700;800&family=Tajawal:wght@400;500;700&display=swap" rel="stylesheet">
-    <link rel="stylesheet" href="style.css?v=32">
+    <link rel="stylesheet" href="style.css?v=33">
 </head>
 <body data-theme="calm">
     <div class="bg-container"></div>
@@ -128,8 +128,8 @@
                 </div>
             </div>
             <div class="header-actions">
-                <button class="header-btn" onclick="toggleSearch()" title="بحث">
-                    <i class="fas fa-search"></i>
+                <button class="header-btn search-toggle-btn" id="search-toggle-btn" onclick="toggleSearch()" title="بحث" aria-label="بحث في الرسائل" aria-expanded="false" aria-controls="search-bar">
+                    <svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="10.6" cy="10.6" r="6.4"></circle><line x1="15.5" y1="15.5" x2="20.6" y2="20.6"></line></svg>
                 </button>
                 <button class="header-btn" id="members-trigger" onclick="toggleMembers()" title="الأعضاء المتصلون" aria-label="إظهار الأعضاء المتصلين" aria-expanded="false" aria-controls="members-sidebar">
                     <i class="fas fa-users"></i>
@@ -152,9 +152,11 @@
 
         <div class="search-bar" id="search-bar">
             <div class="search-input-wrapper">
-                <i class="search-icon fas fa-search"></i>
+                <svg class="search-icon" viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="10.6" cy="10.6" r="6.4"></circle><line x1="15.5" y1="15.5" x2="20.6" y2="20.6"></line></svg>
                 <input type="text" id="search-input" class="glass-input" placeholder="ابحث في الرسائل...">
-                <i class="search-close fas fa-times" onclick="toggleSearch()"></i>
+                <button type="button" class="search-close" onclick="toggleSearch()" title="إغلاق البحث" aria-label="إغلاق البحث">
+                    <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" aria-hidden="true"><line x1="6" y1="6" x2="18" y2="18"></line><line x1="18" y1="6" x2="6" y2="18"></line></svg>
+                </button>
             </div>
         </div>
 
@@ -344,7 +346,7 @@
         </div>
     </div>
 
-    <script src="cloud-config.js?v=32"></script>
-    <script type="module" src="script.js?v=32"></script>
+    <script src="cloud-config.js?v=33"></script>
+    <script type="module" src="script.js?v=33"></script>
 </body>
 </html>
