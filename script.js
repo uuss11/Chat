@@ -1,7 +1,7 @@
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js";
         import { getAnalytics } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-analytics.js";
         import { getDatabase, ref, set, get, push, onValue, query, limitToLast, remove, update, runTransaction, serverTimestamp, onDisconnect } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-database.js";
-        import { TOOL_KINDS, renderToolCard, applyToolAction, parseToolResponse, isToolRequest, buildToolPrompt, isImageRequest, buildImageQueryPrompt, detectRequestKind, buildMediaQueryPrompt, parseMediaPlan, wantsMultipleResults, buildFilePrompt, parseFileResponse, mountToolTimers, clearToolTimers, mountToolCanvases, clearToolCanvases } from './naz-tools.js?v=15';
+        import { TOOL_KINDS, renderToolCard, applyToolAction, parseToolResponse, isToolRequest, buildToolPrompt, isImageRequest, buildImageQueryPrompt, detectRequestKind, buildMediaQueryPrompt, parseMediaPlan, wantsMultipleResults, buildFilePrompt, parseFileResponse, mountToolTimers, clearToolTimers, mountToolCanvases, clearToolCanvases } from './naz-tools.js?v=16';
 
         // ============================================
         // 🔐 Security Utilities
@@ -310,7 +310,8 @@ import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebas
         // ============================================
         // ✅ إعدادات Firebase - تم ملؤها بمعلوماتك
         // ============================================
-        const firebaseConfig = {
+        // 🔐 معلومات فايربيس تُجلب من Cloudflare Worker عند توفّر رابطه، وهذا المضمّن احتياطي فقط.
+        const firebaseConfigFallback = {
             apiKey: "AIzaSyBvGWF0u83mrdtBTLWgGV-ExuO6-4j-1Xk",
             authDomain: "reza-3d325.firebaseapp.com",
             databaseURL: "https://reza-3d325-default-rtdb.europe-west1.firebasedatabase.app",
@@ -320,6 +321,10 @@ import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebas
             appId: "1:454599070550:web:48f519a98dcf302bbe3cf7",
             measurementId: "G-Z6951JPFL2"
         };
+        let firebaseConfig = { ...firebaseConfigFallback };
+        const CLOUD_API_CACHE_KEY = 'reza_cloud_api_url';
+        const CLOUD_RELOAD_FLAG = 'reza_cloud_reload_done';
+        let cloudConfigSource = '';
 
         let app, db, analytics;
         let me = null, activeMsg = null, isEdit = false, replyData = null, forwardData = null;
@@ -368,9 +373,68 @@ import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebas
             }
         }
 
-        // تهيئة Firebase
-        function initFirebase() {
+        // ☁️ رابط الـ Cloudflare Worker: من ?api= أو التخزين المحلي أو cloud-config.js
+        function resolveCloudApiUrl() {
+            const fromQuery = String(new URLSearchParams(location.search).get('api') || '').trim();
+            let fromStorage = '';
+            try { fromStorage = String(localStorage.getItem(CLOUD_API_CACHE_KEY) || '').trim(); } catch (error) { fromStorage = ''; }
+            const fromGlobal = String(window.REZA_CLOUD_API || '').trim();
+            const url = fromQuery || fromStorage || fromGlobal;
+            if (!/^https:\/\/[^\s]+$/i.test(url)) return '';
+            return url.replace(/\/+$/, '');
+        }
+        function rememberCloudApiUrl(url) {
+            const clean = String(url || '').trim().replace(/\/+$/, '');
+            if (!/^https:\/\/[^\s]+$/i.test(clean)) return;
+            try { localStorage.setItem(CLOUD_API_CACHE_KEY, clean); } catch (error) { /* تجاهل */ }
+        }
+        // جلب معلومات فايربيس من الـ Worker، وإذا فشل نرجع للاحتياطي
+        async function loadCloudFirebaseConfig() {
+            const api = resolveCloudApiUrl();
+            if (!api) return false;
             try {
+                const controller = new AbortController();
+                const timer = setTimeout(() => controller.abort(), 8000);
+                const response = await fetch(api + '/config', { signal: controller.signal, headers: { Accept: 'application/json' } });
+                clearTimeout(timer);
+                if (!response.ok) throw new Error('HTTP ' + response.status);
+                const data = await response.json();
+                const remote = data && data.firebase;
+                if (!remote || !remote.apiKey || !remote.databaseURL || !remote.projectId) throw new Error('incomplete config');
+                firebaseConfig = { ...firebaseConfigFallback, ...remote };
+                cloudConfigSource = api;
+                console.log('☁️ معلومات فايربيس جُلبَت من Cloudflare:', api);
+                return true;
+            } catch (error) {
+                console.warn('⚠️ تعذّر جلب الإعدادات من Cloudflare، نستخدم الاحتياطي:', error && error.message);
+                return false;
+            }
+        }
+        function updateCloudConfigStatus() {
+            const box = document.getElementById('cloud-config-status');
+            if (!box) return;
+            const api = resolveCloudApiUrl();
+            if (cloudConfigSource) {
+                box.textContent = '☁️ الإعدادات تُجلب الآن من Cloudflare: ' + cloudConfigSource;
+                box.dataset.state = 'cloud';
+            } else if (api) {
+                box.textContent = '⚠️ الرابط محفوظ لكن الجلب فشل — نتأكد من الرابط والأسرار. الاحتياطي المضمّن فعّال.';
+                box.dataset.state = 'error';
+            } else {
+                box.textContent = 'ℹ️ لا يوجد رابط سحابي بعد — الموقع يستخدم الإعدادات المضمّنة. أضف رابط الـ Worker لتنتقل الأسرار للكلاود.';
+                box.dataset.state = 'local';
+            }
+        }
+        window.setCloudApiUrl = (url) => {
+            rememberCloudApiUrl(url);
+            updateCloudConfigStatus();
+        };
+        // تهيئة Firebase
+        async function initFirebase() {
+            if (isFirebaseReady) return true;
+            try {
+                await loadCloudFirebaseConfig();
+                Object.freeze(firebaseConfig);
                 app = initializeApp(firebaseConfig);
                 db = getDatabase(app);
                 analytics = getAnalytics(app);
@@ -627,6 +691,10 @@ import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebas
                 renderToolCard,
                 applyToolAction,
                 TOOL_KINDS,
+                resolveCloudApiUrl,
+                loadCloudFirebaseConfig,
+                updateCloudConfigStatus,
+                cloudInfo: () => ({ source: cloudConfigSource, api: resolveCloudApiUrl(), projectId: firebaseConfig.projectId, db: firebaseConfig.databaseURL }),
                 sanitizeURL
             };
         }
@@ -673,7 +741,7 @@ import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebas
 
             // التحقق من تهيئة Firebase
             if (!isFirebaseReady) {
-                if (!initFirebase()) {
+                if (!(await initFirebase())) {
                     return;
                 }
             }
@@ -843,7 +911,7 @@ import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebas
             
             if (savedUser && savedPass) {
                 if (!isFirebaseReady) {
-                    initFirebase();
+                    await initFirebase();
                 }
                 
                 try {
@@ -1978,6 +2046,18 @@ import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebas
                 if (snap.exists()) {
                     dbAiConfig = snap.val();
                     console.log('✅ AI config loaded successfully for user:', me?.user);
+                    // ☁️ إذا المالك ضبط رابط الكلاود، نعتمده ونعيد التحميل مرة واحدة
+                    const savedCloudApi = String(dbAiConfig.cloudApi || '').trim().replace(/\/+$/, '');
+                    if (savedCloudApi && savedCloudApi !== cloudConfigSource && /^https:\/\//i.test(savedCloudApi)) {
+                        let reloaded = false;
+                        try { reloaded = sessionStorage.getItem(CLOUD_RELOAD_FLAG) === '1'; } catch (error) { reloaded = true; }
+                        if (!reloaded) {
+                            rememberCloudApiUrl(savedCloudApi);
+                            try { sessionStorage.setItem(CLOUD_RELOAD_FLAG, '1'); } catch (error) { /* تجاهل */ }
+                            location.reload();
+                            return;
+                        }
+                    }
                     // ملء حقول الإعدادات للمالك فقط
                     if (me && me.user === 'reza') {
                         document.getElementById('ai-name').value = dbAiConfig.name || '';
@@ -1985,6 +2065,7 @@ import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebas
                         document.getElementById('ai-google-key').value = dbAiConfig.googleKey || '';
                         document.getElementById('ai-google-cx').value = dbAiConfig.googleCx || '';
                         document.getElementById('ai-google-worker').value = dbAiConfig.googleWorker || '';
+                        document.getElementById('ai-cloud-api').value = dbAiConfig.cloudApi || '';
                         updateGoogleSearchStatus();
                         document.getElementById('ai-mood').value = dbAiConfig.mood || 'auto';
                         document.getElementById('ai-avatar').value = dbAiConfig.avatar || '';
@@ -2247,6 +2328,7 @@ import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebas
                     googleKey: document.getElementById('ai-google-key').value.trim(),
                     googleCx: document.getElementById('ai-google-cx').value.trim(),
                     googleWorker: document.getElementById('ai-google-worker').value.trim(),
+                    cloudApi: document.getElementById('ai-cloud-api').value.trim().replace(/\/+$/, ''),
                     mood,
                     avatar,
                     keyStatus: aiKeyStatus,
@@ -3007,7 +3089,8 @@ import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebas
         // تهيئة Firebase عند تحميل الصفحة والتحقق من الجلسة المحفوظة
         document.addEventListener('DOMContentLoaded', async () => {
             loadStoredKeyStatus();
-            initFirebase();
+            await initFirebase();
+            updateCloudConfigStatus();
             // محاولة تسجيل الدخول التلقائي
             setTimeout(async () => {
                 await checkSavedSession();
@@ -3018,7 +3101,6 @@ import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebas
         // 🛡️ حماية ضد Console Injection
         // ============================================
         // تجميد الإعدادات الحساسة لمنع التعديل من الكونسول
-        Object.freeze(firebaseConfig);
         Object.freeze(REACTION_EMOJIS);
 
         // حماية الدوال الأمنية من الاستبدال

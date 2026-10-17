@@ -9,7 +9,7 @@
     <title>REZA | Ultra Chat Experience</title>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     <link href="https://fonts.googleapis.com/css2?family=Cairo:wght@300;400;500;600;700;800&family=Tajawal:wght@400;500;700&display=swap" rel="stylesheet">
-    <link rel="stylesheet" href="style.css?v=15">
+    <link rel="stylesheet" href="style.css?v=16">
 </head>
 <body data-theme="calm">
     <div class="bg-container"></div>
@@ -317,6 +317,10 @@
                     <input type="text" id="ai-google-worker" class="glass-input" placeholder="رابط وسيط Cloudflare Worker (اختياري)" autocomplete="off">
                     <small class="ai-model-note">بدون مفتاح جوجل يعمل البحث تلقائياً عبر ويكيبيديا العربية والإنجليزية. مفتاح جوجل المجاني يعطي 100 بحث يومياً، والوسيط يخفي المفتاح عن المتصفح.</small>
                     <div id="ai-google-status" class="ai-model-status" aria-live="polite"></div>
+                    <label class="ai-field-label"><i class="fas fa-cloud"></i> رابط Cloudflare Worker (معلومات فايربيس من الكلاود)</label>
+                    <input type="text" id="ai-cloud-api" class="glass-input" placeholder="https://reza-chat-api.<account>.workers.dev" autocomplete="off" oninput="setCloudApiUrl(this.value)">
+                    <small class="ai-model-note">لمّا تضبط الرابط، الموقع يجلب معلومات فايربيس من الـ Worker بدل النسخة المضمّنة بالكود.</small>
+                    <div id="cloud-config-status" class="ai-model-status" aria-live="polite"></div>
                 </div>
             </div>
             <div class="input-group ai-mood-group">
@@ -340,6 +344,7 @@
         </div>
     </div>
 
-    <script type="module" src="script.js?v=15"></script>
+    <script src="cloud-config.js?v=16"></script>
+    <script type="module" src="script.js?v=16"></script>
 </body>
 </html>
