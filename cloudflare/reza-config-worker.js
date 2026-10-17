@@ -1,23 +1,20 @@
 /**
- * REZA CHAT · Cloudflare Worker (نسخة كاملة قابلة للنشر)
+ * REZA CHAT · Cloudflare Worker (reza-chat-config)
  * ------------------------------------------------------------
- * الاسم: reza-chat-config
- * الرابط: https://reza-chat-config.aliali1717ikik.workers.dev
- *
  * المسارات:
  *   GET /health                     فحص سريع
- *   GET /config                     معلومات فايربيس (من أسرار الـ Worker) + الميزات المفعّلة
- *   GET /search?q=&type=&page=      بحث ويب/صور (Serper ثم Brave ثم Google JSON حسب المفاتيح المتوفرة)
- *   GET /tiktok?user=               معلومات حساب تيك توك (من صفحة التضمين)
- *   GET /instagram?user=            معلومات حساب انستغرام (i.instagram web_profile_info)
+ *   GET /config                     معلومات فايربيس (من أسرار الـ Worker) + حالة الميزات
+ *   GET /search?q=&type=&page=      بحث ويب/صور (Serper ثم Brave ثم Google JSON)
+ *   GET /tiktok?user=               معلومات حساب تيك توك (صفحة التضمين)
+ *   GET /instagram?user=            معلومات حساب انستغرام
+ *   GET /image?prompt=&count=       توليد صورة (Workers AI) وتخزينها في KV
+ *   GET /img/<key>                  إرجاع الصورة المخزنة
  *
- * الأسرار المطلوبة: FIREBASE_API_KEY, FIREBASE_AUTH_DOMAIN, FIREBASE_DB_URL, FIREBASE_PROJECT_ID,
- *                   FIREBASE_STORAGE_BUCKET, FIREBASE_SENDER_ID, FIREBASE_APP_ID, FIREBASE_MEASUREMENT_ID
- * الاختيارية: GOOGLE_API_KEY, GOOGLE_CX, SERPER_API_KEY, BRAVE_API_KEY
- * CORS محصور بـ https://uuss11.github.io
+ * Bindings: AI (Workers AI) + IMAGES (KV: reza-chat-images)
+ * الأسرار: FIREBASE_* (المطلوبة)، GOOGLE_*، SERPER_API_KEY، BRAVE_API_KEY، IG_SESSIONID (اختيارية)
  */
 
-const ALLOW = ['https://uuss11.github.io'];
+const ALLOW = ['https://uuss11.github.io', 'http://127.0.0.1:8123', 'http://localhost:8123'];
 const allow = origin => (ALLOW.includes(origin) ? origin : ALLOW[0]);
 const head = origin => ({
     'Access-Control-Allow-Origin': allow(origin),
@@ -30,7 +27,9 @@ const head = origin => ({
 const json = (data, status, origin) => new Response(JSON.stringify(data), { status: status || 200, headers: head(origin) });
 const clean = s => String(s || '').split(' ').filter(Boolean).join(' ').slice(0, 200);
 const UA = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Safari/537.36';
+const APPA = 'Instagram 219.0.0.12.117 Android (30/11; 320dpi; 720x1440; mt6765; ar_IQ)';
 const safeUser = u => String(u || '').replace(/[^A-Za-z0-9._]/g, '').slice(0, 30);
+const sleep = ms => new Promise(r => setTimeout(r, ms));
 
 /* ---------- تيك توك ---------- */
 function field(win, key) {
@@ -56,13 +55,13 @@ function tiktokFrom(html, user) {
     const win = html.slice(Math.max(0, at - 4000), at + 1500);
     const uname = field(win, 'uniqueId');
     if (!uname) return null;
-    return {
+    const prof = {
         platform: 'tiktok',
         username: uname,
         nickname: field(win, 'nickname'),
         id: field(win, 'id'),
         bio: field(win, 'signature'),
-        avatar: field(win, 'avatarLarger') || field(win, 'avatarMedium') || field(win, 'avatarThumb'),
+        avatar: field(win, 'avatarThumbUrl') || field(win, 'avatarLarger') || field(win, 'avatarMedium') || field(win, 'avatarThumb'),
         verified: field(win, 'verified') === 'true',
         private: field(win, 'privateAccount') === 'true',
         region: field(win, 'region'),
@@ -72,39 +71,59 @@ function tiktokFrom(html, user) {
         videos: num(field(win, 'videoCount')),
         link: 'https://www.tiktok.com/@' + uname
     };
+    if (!prof.nickname && !prof.id && prof.followers === null) return null;
+    return prof;
 }
 async function tiktok(user) {
     const urls = ['https://www.tiktok.com/embed/@' + user, 'https://www.tiktok.com/@' + user];
     const tried = [];
+    let loaded = false;
     for (const url of urls) {
         try {
             const r = await fetch(url, { headers: { 'User-Agent': UA, Accept: 'text/html', 'Accept-Language': 'en-US,en;q=0.9' } });
             const html = await r.text();
+            if (r.ok && html.length > 20000) loaded = true;
             const prof = tiktokFrom(html, user);
             if (prof) return { profile: prof };
-            tried.push(url + '(' + r.status + ',' + html.length + ')');
+            tried.push(url.indexOf('embed') > 0 ? 'embed' : 'page:' + r.status);
         } catch (e) {
-            tried.push(url + '(' + String(e).slice(0, 30) + ')');
+            tried.push('err:' + String(e).slice(0, 25));
         }
     }
-    return { error: 'tiktok_blocked', tried };
+    return { error: loaded ? 'tiktok_not_found' : 'tiktok_blocked', tried };
 }
 
 /* ---------- انستغرام ---------- */
-async function instagram(user) {
-    const heads = {
-        'User-Agent': UA,
-        'x-ig-app-id': '936619743392459',
-        Accept: '*/*',
-        'Accept-Language': 'en-US,en;q=0.9',
-        Referer: 'https://www.instagram.com/'
+function igProfile(u) {
+    return {
+        platform: 'instagram',
+        username: u.username,
+        nickname: u.full_name || '',
+        id: u.id || '',
+        bio: u.biography || '',
+        avatar: u.profile_pic_url_hd || u.profile_pic_url || '',
+        verified: Boolean(u.is_verified),
+        private: Boolean(u.is_private),
+        category: u.category_name || '',
+        external: u.external_url || '',
+        followers: (u.edge_followed_by || {}).count,
+        following: (u.edge_follow || {}).count,
+        videos: (u.edge_owner_to_timeline_media || {}).count,
+        link: 'https://www.instagram.com/' + u.username
     };
-    const urls = [
-        'https://i.instagram.com/api/v1/users/web_profile_info/?username=' + user,
-        'https://www.instagram.com/api/v1/users/web_profile_info/?username=' + user
-    ];
+}
+async function instagram(user, env) {
+    const sid = env.IG_SESSIONID || '';
+    const url = 'https://www.instagram.com/api/v1/users/web_profile_info/?username=' + user;
     const tried = [];
-    for (const url of urls) {
+    for (let i = 0; i < 3; i++) {
+        const heads = {
+            'User-Agent': i === 0 ? APPA : UA,
+            Accept: '*/*',
+            'Accept-Language': 'en-US,en;q=0.9',
+            'X-Requested-With': 'XMLHttpRequest'
+        };
+        if (i > 0 && sid) heads['Cookie'] = 'sessionid=' + sid;
         try {
             const r = await fetch(url, { headers: heads });
             const txt = await r.text();
@@ -112,33 +131,16 @@ async function instagram(user) {
                 let data = null;
                 try { data = JSON.parse(txt); } catch (e) { data = null; }
                 const u = (((data || {}).data) || {}).user || {};
-                if (u.username) {
-                    return {
-                        profile: {
-                            platform: 'instagram',
-                            username: u.username,
-                            nickname: u.full_name || '',
-                            id: u.id || '',
-                            bio: u.biography || '',
-                            avatar: u.profile_pic_url_hd || u.profile_pic_url || '',
-                            verified: Boolean(u.is_verified),
-                            private: Boolean(u.is_private),
-                            category: u.category_name || '',
-                            external: u.external_url || '',
-                            followers: (u.edge_followed_by || {}).count,
-                            following: (u.edge_follow || {}).count,
-                            videos: (u.edge_owner_to_timeline_media || {}).count,
-                            link: 'https://www.instagram.com/' + u.username
-                        }
-                    };
-                }
+                if (u.username) return { profile: igProfile(u) };
+                return { error: 'instagram_not_found', tried };
             }
-            tried.push(url.slice(0, 40) + '(' + r.status + ',' + txt.length + ')');
+            tried.push('try' + i + ':' + r.status + (txt.indexOf('few minutes') >= 0 ? '/ratelimited' : ''));
         } catch (e) {
-            tried.push('err:' + String(e).slice(0, 30));
+            tried.push('err:' + String(e).slice(0, 25));
         }
+        await sleep(1200);
     }
-    return { error: 'instagram_blocked', tried };
+    return { error: 'instagram_blocked', tried, session: Boolean(sid) };
 }
 
 /* ---------- محركات البحث ---------- */
@@ -215,8 +217,40 @@ async function braveSearch(q, type, page, key) {
     };
 }
 
+/* ---------- توليد الصور ---------- */
+function b64ToBytes(b64) {
+    const bin = atob(b64);
+    const out = new Uint8Array(bin.length);
+    for (let i = 0; i < bin.length; i++) out[i] = bin.charCodeAt(i);
+    return out;
+}
+const IMG_MODELS = ['@cf/black-forest-labs/flux-1-schnell', '@cf/stabilityai/stable-diffusion-xl-base-1.0'];
+async function generateImage(prompt, env) {
+    if (!env.AI || !env.IMAGES) return { error: 'bindings_missing' };
+    let detail = '';
+    for (const model of IMG_MODELS) {
+        try {
+            const out = await env.AI.run(model, { prompt, steps: 4 });
+            let b64 = '';
+            if (out && typeof out.image === 'string') b64 = out.image;
+            else if (out && out.image instanceof Uint8Array) {
+                let s = '';
+                for (let i = 0; i < out.image.length; i++) s += String.fromCharCode(out.image[i]);
+                b64 = btoa(s);
+            }
+            if (!b64) { detail = 'empty'; continue; }
+            const key = 'i/' + Date.now().toString(36) + '-' + Math.random().toString(36).slice(2, 8);
+            await env.IMAGES.put(key, b64ToBytes(b64), { metadata: { contentType: 'image/jpeg' } });
+            return { key, model };
+        } catch (e) {
+            detail = String(e).slice(0, 140);
+        }
+    }
+    return { error: 'ai_failed', detail };
+}
+
 export default {
-    async fetch(request, env) {
+    async fetch(request, env, ctx) {
         const origin = request.headers.get('Origin') || '';
         if (request.method === 'OPTIONS') return new Response(null, { status: 204, headers: head(origin) });
 
@@ -248,7 +282,10 @@ export default {
                     brave: Boolean(env.BRAVE_API_KEY),
                     tiktok: true,
                     instagram: true,
-                    qr: true
+                    instagramSession: Boolean(env.IG_SESSIONID),
+                    qr: true,
+                    imageGen: Boolean(env.AI),
+                    imageStore: Boolean(env.IMAGES)
                 },
                 time: new Date().toISOString()
             }, 200, origin);
@@ -257,8 +294,21 @@ export default {
         if (path === '/tiktok' || path === '/instagram') {
             const user = safeUser(u.searchParams.get('user'));
             if (user.length < 2) return json({ ok: false, error: 'bad_user' }, 400, origin);
-            const out = path === '/tiktok' ? await tiktok(user) : await instagram(user);
-            if (out.error) return json({ ok: false, error: out.error, tried: out.tried, user }, 502, origin);
+            const kind = path === '/tiktok' ? 'tt' : 'ig';
+            const ck = new Request('https://reza-chat-internal-cache.local/' + kind + '/' + user);
+            const cache = caches.default;
+            try {
+                const hit = await cache.match(ck);
+                if (hit) {
+                    const data = await hit.json();
+                    return json({ ok: true, profile: data.profile, cached: true }, 200, origin);
+                }
+            } catch (e) { /* ignore */ }
+            const out = path === '/tiktok' ? await tiktok(user) : await instagram(user, env);
+            if (out.error) return json({ ok: false, error: out.error, tried: out.tried, user }, out.error.indexOf('not_found') >= 0 ? 404 : 502, origin);
+            try {
+                ctx.waitUntil(cache.put(ck, new Response(JSON.stringify({ profile: out.profile }), { headers: { 'Cache-Control': 'max-age=3600' } })));
+            } catch (e) { /* ignore */ }
             return json({ ok: true, profile: out.profile }, 200, origin);
         }
 
@@ -283,6 +333,47 @@ export default {
                 tried.push(pair[0] + ':' + (res.error || 'empty') + (res.status ? ('(' + res.status + ')') : ''));
             }
             return json({ ok: false, error: 'search_failed', tried }, 502, origin);
+        }
+
+        if (path === '/image') {
+            const prompt = (u.searchParams.get('prompt') || '').trim().slice(0, 400);
+            const count = Math.min(4, Math.max(1, parseInt(u.searchParams.get('count') || '1', 10) || 1));
+            if (prompt.length < 3) return json({ ok: false, error: 'short_prompt' }, 400, origin);
+            const started = Date.now();
+            const urls = [];
+            let model = '';
+            for (let i = 0; i < count; i++) {
+                const res = await generateImage(prompt, env);
+                if (res.error) {
+                    if (!urls.length) return json({ ok: false, error: res.error, detail: res.detail || '' }, 502, origin);
+                    break;
+                }
+                urls.push(u.origin + '/img/' + res.key);
+                model = res.model;
+            }
+            return json({ ok: true, urls, model, ms: Date.now() - started }, 200, origin);
+        }
+
+        if (path.indexOf('/img/') === 0) {
+            const key = path.slice(5);
+            if (!key || key.length > 200) return new Response('bad key', { status: 400 });
+            const cache = caches.default;
+            const ck = new Request('https://reza-chat-internal-cache.local/img/' + key);
+            try {
+                const hit = await cache.match(ck);
+                if (hit) return hit;
+            } catch (e) { /* ignore */ }
+            const got = await env.IMAGES.getWithMetadata(key, 'arrayBuffer');
+            if (!got || !got.value) return new Response('not found', { status: 404 });
+            const res = new Response(got.value, {
+                headers: {
+                    'Content-Type': (got.metadata && got.metadata.contentType) || 'image/jpeg',
+                    'Cache-Control': 'public, max-age=31536000, immutable',
+                    'Access-Control-Allow-Origin': '*'
+                }
+            });
+            try { ctx.waitUntil(cache.put(ck, res.clone())); } catch (e) { /* ignore */ }
+            return res;
         }
 
         return json({ ok: false, error: 'not_found' }, 404, origin);
