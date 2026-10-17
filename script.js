@@ -1,7 +1,7 @@
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js";
         import { getAnalytics } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-analytics.js";
         import { getDatabase, ref, set, get, push, onValue, query, limitToLast, remove, update, runTransaction, serverTimestamp, onDisconnect } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-database.js";
-        import { TOOL_KINDS, renderToolCard, applyToolAction, parseToolResponse, isToolRequest, buildToolPrompt, isImageRequest, buildImageQueryPrompt, detectRequestKind, buildMediaQueryPrompt, parseMediaPlan, wantsMultipleResults, buildFilePrompt, parseFileResponse, mountToolTimers, clearToolTimers, mountToolCanvases, clearToolCanvases } from './naz-tools.js?v=26';
+        import { TOOL_KINDS, renderToolCard, applyToolAction, parseToolResponse, isToolRequest, buildToolPrompt, isImageRequest, buildImageQueryPrompt, detectRequestKind, buildMediaQueryPrompt, parseMediaPlan, wantsMultipleResults, buildFilePrompt, parseFileResponse, mountToolTimers, clearToolTimers, mountToolCanvases, clearToolCanvases } from './naz-tools.js?v=27';
 
         // ============================================
         // 🔐 Security Utilities
@@ -113,8 +113,8 @@ import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebas
             </div>`;
         }
         const SOCIAL_RULES = [
-            { platform: 'tiktok', words: /(تيك\s?توك|تكتوك|tik\s?tok|tiktok|tik-tok)/iu, label: 'تيك توك', icon: 'fa-music' },
-            { platform: 'instagram', words: /(انستا|إنستا|انستغرام|إنستغرام|انستكرام|instagram|insta)/iu, label: 'انستغرام', icon: 'fa-camera' }
+            { platform: 'tiktok', words: /(?:^|[\s،,.!؟:"'(\[])(?:تيك(?:\s?توك)?|تكتوك|tik\s?tok|tiktok|tik-tok)(?:$|[\s،,.!؟:"')\]])/iu, label: 'تيك توك', icon: 'fa-music' },
+            { platform: 'instagram', words: /(?:^|[\s،,.!؟:"'(\[])(?:انستا|إنستا|انستغرام|إنستغرام|انستكرام|instagram|insta|ig)(?:$|[\s،,.!؟:"')\]])/iu, label: 'انستغرام', icon: 'fa-camera' }
         ];
         function detectSocialRequest(text) {
             const value = String(text || '').trim();
@@ -139,6 +139,9 @@ import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebas
                     .replace(/\s+/g, ' ')
                     .trim()
                     .slice(0, 80);
+                if (/^[A-Za-z0-9._]{2,30}$/.test(query)) {
+                    return { platform: rule.platform, label: rule.label, user: query, action: 'profile' };
+                }
                 if (query.length >= 2) return { platform: rule.platform, label: rule.label, user: '', action: 'search', query };
             }
             return null;
@@ -147,6 +150,7 @@ import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebas
             const api = typeof resolveCloudApiUrl === 'function' ? resolveCloudApiUrl() : '';
             if (!api) return null;
             const payload = await fetchJsonWithTimeout(`${api}/${platform}?user=${encodeURIComponent(String(user || '').replace(/[^A-Za-z0-9._]/g, ''))}`, 20000);
+            window.__nazLastSocialError = (payload && payload.error) || '';
             if (!payload || payload.ok === false) {
                 if (payload && payload.error) console.warn('☁️ social lookup failed:', payload.error, payload.tried || '');
                 return null;
@@ -2613,10 +2617,14 @@ import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebas
                         const barUrl = socialRequest.platform === 'instagram'
                             ? `https://www.instagram.com/${encodeURIComponent(socialRequest.user)}/`
                             : `https://www.tiktok.com/@${encodeURIComponent(socialRequest.user)}`;
+                        const lookupError = (window.__nazLastSocialError || '') + '';
+                        const blocked = lookupError.indexOf('blocked') !== -1;
                         const fbMessage = {
                             uid: 'naz_ai',
                             name: aiName,
-                            txt: `ما كدرت أجيب بيانات @${socialRequest.user} من ${socialRequest.label} (المنصة تحجب السيرفرات). هذا الحساب مباشرة: ${barUrl}`,
+                            txt: blocked
+                                ? `ما كدرت أجيب بيانات @${socialRequest.user} من ${socialRequest.label} (المنصة تحجب السيرفرات). هذا الحساب مباشرة: ${barUrl}`
+                                : `ما لقيت حساب @${socialRequest.user} على ${socialRequest.label} — تأكد من اليوزر. جرّب تكتبه بدون @ أو أرسل رابط الحساب.`,
                             time: serverTimestamp(),
                             avatar: aiAvatar,
                             reply: { name: safeUserName, txt: safeUserMessage.slice(0, 120) }
