@@ -1,7 +1,7 @@
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js";
         import { getAnalytics } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-analytics.js";
         import { getDatabase, ref, set, get, push, onValue, query, limitToLast, remove, update, runTransaction, serverTimestamp, onDisconnect } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-database.js";
-        import { TOOL_KINDS, renderToolCard, applyToolAction, parseToolResponse, isToolRequest, buildToolPrompt, mountToolTimers, clearToolTimers } from './naz-tools.js?v=6';
+        import { TOOL_KINDS, renderToolCard, applyToolAction, parseToolResponse, isToolRequest, buildToolPrompt, isImageRequest, buildImageQueryPrompt, mountToolTimers, clearToolTimers } from './naz-tools.js?v=7';
 
         // ============================================
         // 🔐 Security Utilities
@@ -113,6 +113,7 @@ import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebas
         let aiKeyStatus = {};
         let aiModelChain = [];
         const toolRegistry = new Map();
+        const openReactionDetails = new Set();
         let openRouterModelsCache = null;
         let openRouterModelsCachedAt = 0;
         let openRouterModelsPromise = null;
@@ -357,19 +358,47 @@ import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebas
                 return `<div class="reactions-container"><span class="reaction-add-btn" onclick="event.stopPropagation(); showReactionPicker('${msgKey}', this)"><i class="far fa-smile"></i></span></div>`;
             }
             let html = '<div class="reactions-container">';
+            const groups = [];
             for (const emoji of REACTION_EMOJIS) {
                 if (reactions[emoji]) {
                     const users = Object.keys(reactions[emoji]);
                     const count = users.length;
                     if (count > 0) {
                         const isMine = me && users.includes(me.user);
+                        groups.push({ emoji, users, count });
                         html += `<span class="reaction-chip ${isMine ? 'my-reaction' : ''}" onclick="event.stopPropagation(); toggleReaction('${msgKey}', '${emoji}')"><span class="r-emoji">${emoji}</span><span class="r-count">${count}</span></span>`;
                     }
                 }
             }
+            if (groups.length) {
+                const total = groups.reduce((sum, group) => sum + group.count, 0);
+                const isOpen = openReactionDetails.has(msgKey);
+                html += `<span class="reaction-details-btn ${isOpen ? 'is-open' : ''}" role="button" tabindex="0" aria-expanded="${isOpen}" onclick="event.stopPropagation(); toggleReactionDetails(this)" data-msg-key="${msgKey}" title="من تفاعل؟"><i class="fas fa-chevron-down"></i><span>${total}</span></span>`;
+                html += `<div class="reaction-details" ${isOpen ? '' : 'hidden'}>${groups.map(group => {
+                    const names = group.users.map(uid => {
+                        const record = reactions[group.emoji][uid];
+                        const stored = record && typeof record === 'object' ? record.name : '';
+                        return sanitizeHTML(stored || uid);
+                    });
+                    return `<div class="reaction-detail-row"><span class="r-emoji">${group.emoji}</span><span class="r-names">${names.join('، ')}</span></div>`;
+                }).join('')}</div>`;
+            }
             html += `<span class="reaction-add-btn" onclick="event.stopPropagation(); showReactionPicker('${msgKey}', this)"><i class="far fa-smile"></i></span></div>`;
             return html;
         }
+
+        window.toggleReactionDetails = element => {
+            const container = element.closest('.reactions-container');
+            const panel = container?.querySelector('.reaction-details');
+            if (!panel) return;
+            const msgKey = element.dataset.msgKey;
+            const willOpen = panel.hidden;
+            panel.hidden = !willOpen;
+            element.classList.toggle('is-open', willOpen);
+            element.setAttribute('aria-expanded', String(willOpen));
+            if (willOpen) openReactionDetails.add(msgKey);
+            else openReactionDetails.delete(msgKey);
+        };
 
         // ✅ دالة تسجيل الدخول / إنشاء الحساب
         window.attemptLogin = async () => {
@@ -696,7 +725,11 @@ import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebas
                     
                     let content = '';
                     if (m.tool && TOOL_KINDS[m.tool.kind]) {
-                        toolRegistry.set(child.key, { tool: m.tool, state: m.toolState });
+                        toolRegistry.set(child.key, {
+                            tool: m.tool,
+                            state: m.toolState,
+                            menu: { uid: m.uid, name: m.name, txt: m.txt, isImage: false, isPinned: m.isPinned }
+                        });
                         content = `${m.txt ? `<div class="tool-caption">${sanitizeHTML(m.txt)}</div>` : ''}${renderToolCard(child.key, m.tool, m.toolState, { user: me.user, name: me.name })}`;
                     } else if (m.isImage) {
                         const safeImgUrl = sanitizeURL(m.txt) || '';
@@ -718,7 +751,7 @@ import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebas
                             </div>
                             ${m.uid === me.user ? `<img src="${safeAvatarAttr}" class="msg-avatar" alt="${safeName}" onclick="openUserAvatarModal('${safeAvatarAttr}')" onerror="this.src='${getDefaultAvatarUrl(safeUid)}'">` : ''}
                         </div>
-                        <div class="bubble ${isBanned ? 'banned-msg' : ''} ${m.tool ? 'tool-bubble' : ''}" onclick="openMenu('${sanitizeHTML(child.key)}', ${safeM})">
+                        <div class="bubble ${isBanned ? 'banned-msg' : ''} ${m.tool ? 'tool-bubble' : ''}" ${m.tool && TOOL_KINDS[m.tool.kind] ? '' : `onclick="openMenu('${sanitizeHTML(child.key)}', ${safeM})"`}>
                             ${m.reply ? `<div class="reply-preview"><span class="reply-name">${sanitizeHTML(m.reply.name)}</span><div class="reply-text">${sanitizeHTML(m.reply.txt.substring(0, 50))}${m.reply.txt.length > 50 ? '...' : ''}</div></div>` : ''}
                             ${content}
                         </div>
@@ -1325,6 +1358,61 @@ import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebas
             });
         }
 
+        const IMAGE_MIME_TYPES = ['image/jpeg', 'image/png', 'image/webp', 'image/gif'];
+
+        async function searchCommonsImage(queries) {
+            for (const rawQuery of queries.slice(0, 3)) {
+                const cleanQuery = String(rawQuery || '').trim().slice(0, 120);
+                if (cleanQuery.length < 2) continue;
+                try {
+                    const endpoint = `https://commons.wikimedia.org/w/api.php?action=query&format=json&origin=*&generator=search&gsrsearch=${encodeURIComponent(cleanQuery)}&gsrnamespace=6&gsrlimit=12&prop=imageinfo&iiprop=url|mime&iiurlwidth=1200`;
+                    const controller = new AbortController();
+                    const timeout = setTimeout(() => controller.abort(), 15000);
+                    let payload;
+                    try {
+                        const response = await fetch(endpoint, { headers: { Accept: 'application/json' }, signal: controller.signal });
+                        if (!response.ok) continue;
+                        payload = await response.json();
+                    } finally {
+                        clearTimeout(timeout);
+                    }
+                    const pages = payload?.query?.pages ? Object.values(payload.query.pages) : [];
+                    const candidates = pages
+                        .map(page => {
+                            const info = Array.isArray(page.imageinfo) ? page.imageinfo[0] : null;
+                            if (!info) return null;
+                            if (!IMAGE_MIME_TYPES.includes(info.mime)) return null;
+                            const rawUrl = String(info.thumburl || info.url || '')
+                                .replace(/[?&]utm_[^&#]*/g, '')
+                                .replace(/[?&]$/, '');
+                            const safe = sanitizeURL(rawUrl);
+                            if (!safe) return null;
+                            return /\.(jpe?g|png|webp|gif)$/i.test(safe) ? safe : null;
+                        })
+                        .filter(Boolean);
+                    if (candidates.length) return candidates[0];
+                } catch (error) {
+                    console.warn('Commons image search failed for:', cleanQuery, error?.message || error);
+                }
+            }
+            return null;
+        }
+
+        function parseImageSearchResponse(rawText) {
+            const text = String(rawText || '');
+            const start = text.indexOf('{');
+            const end = text.lastIndexOf('}');
+            if (start === -1 || end <= start) return null;
+            let parsed;
+            try { parsed = JSON.parse(text.slice(start, end + 1)); } catch { return null; }
+            const queries = Array.isArray(parsed.queries)
+                ? parsed.queries.map(value => String(value || '').trim()).filter(Boolean).slice(0, 3)
+                : [];
+            const caption = String(parsed.caption || '').replace(/\s+/g, ' ').trim().slice(0, 140);
+            if (!queries.length) return null;
+            return { queries, caption };
+        }
+
         async function requestOpenRouterCompletion(key, model, messages, maxTokens, forceJson) {
             const controller = new AbortController();
             const timeout = setTimeout(() => controller.abort(), 30000);
@@ -1675,6 +1763,36 @@ import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebas
             showNotification('NAZ Ai يكتب الآن... 🤖');
             console.log(`🤖 AI triggered by ${safeUserName}: "${safeUserMessage}"`);
 
+            if (isImageRequest(safeUserMessage)) {
+                try {
+                    showNotification('NAZ تدوّر صورة... 🔍');
+                    const planCompletion = await callOpenRouter(
+                        [{ role: 'user', content: buildImageQueryPrompt(safeUserMessage, safeUserName) }],
+                        { maxTokens: 300, json: true }
+                    );
+                    const plan = parseImageSearchResponse(planCompletion.text);
+                    const fallbackQueries = [safeUserMessage.replace(/[^\p{L}\p{N}\s]/gu, ' ').trim().slice(0, 60)];
+                    const foundUrl = await searchCommonsImage(plan?.queries?.length ? plan.queries : fallbackQueries);
+                    if (foundUrl) {
+                        await push(ref(db, 'messages'), {
+                            uid: 'naz_ai',
+                            name: aiName,
+                            txt: foundUrl,
+                            time: serverTimestamp(),
+                            avatar: aiAvatar,
+                            isImage: true,
+                            caption: (plan?.caption || 'هذي الصورة اللي طلبتها').slice(0, 140),
+                            reply: { name: safeUserName, txt: safeUserMessage.slice(0, 120) }
+                        });
+                        showNotification('✅ ناز أرسلت الصورة');
+                        return;
+                    }
+                    console.warn('No Wikimedia image matched, falling back to a text reply');
+                } catch (imageError) {
+                    console.warn('Image search failed, falling back to a text reply:', imageError);
+                }
+            }
+
             if (isToolRequest(safeUserMessage)) {
                 try {
                     const toolCompletion = await callOpenRouter(
@@ -2022,6 +2140,8 @@ import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebas
         function collectToolPayload(card, trigger) {
             const payload = { fields: {} };
             if (trigger.dataset.toolValue !== undefined) payload.value = trigger.dataset.toolValue;
+            if (trigger.dataset.toolMode) payload.mode = trigger.dataset.toolMode;
+            if (trigger.dataset.toolItem !== undefined) payload.item = trigger.dataset.toolItem;
             card.querySelectorAll('[data-tool-input]').forEach(input => {
                 payload.fields[input.dataset.toolInput] = input.value;
             });
@@ -2053,7 +2173,16 @@ import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebas
 
         document.getElementById('chat-flow').addEventListener('click', event => {
             const trigger = event.target.closest('[data-tool-action]');
-            if (!trigger) return;
+            if (!trigger) {
+                const menuTrigger = event.target.closest('[data-tool-menu]');
+                if (!menuTrigger) return;
+                event.preventDefault();
+                event.stopPropagation();
+                const menuCard = menuTrigger.closest('[data-tool-card]');
+                const entry = menuCard ? toolRegistry.get(menuCard.dataset.toolMsg) : null;
+                if (entry?.menu) openMenu(menuCard.dataset.toolMsg, entry.menu);
+                return;
+            }
             event.preventDefault();
             event.stopPropagation();
             const card = trigger.closest('[data-tool-card]');
