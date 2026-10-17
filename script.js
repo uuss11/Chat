@@ -1,7 +1,7 @@
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js";
         import { getAnalytics } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-analytics.js";
         import { getDatabase, ref, set, get, push, onValue, query, limitToLast, remove, update, runTransaction, serverTimestamp, onDisconnect } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-database.js";
-        import { TOOL_KINDS, renderToolCard, applyToolAction, parseToolResponse, isToolRequest, buildToolPrompt, isImageRequest, buildImageQueryPrompt, detectRequestKind, buildMediaQueryPrompt, parseMediaPlan, buildFilePrompt, parseFileResponse, mountToolTimers, clearToolTimers, mountToolCanvases, clearToolCanvases } from './naz-tools.js?v=8';
+        import { TOOL_KINDS, renderToolCard, applyToolAction, parseToolResponse, isToolRequest, buildToolPrompt, isImageRequest, buildImageQueryPrompt, detectRequestKind, buildMediaQueryPrompt, parseMediaPlan, wantsMultipleResults, buildFilePrompt, parseFileResponse, mountToolTimers, clearToolTimers, mountToolCanvases, clearToolCanvases } from './naz-tools.js?v=9';
 
         // ============================================
         // 🔐 Security Utilities
@@ -59,6 +59,46 @@ import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebas
                 .replace(/>/g, '&gt;')
                 .replace(/"/g, '&quot;')
                 .replace(/'/g, '&#39;');
+        }
+
+        function renderResultsCard(results, caption) {
+            const kind = ['image', 'audio', 'video'].includes(results.kind) ? results.kind : 'image';
+            const items = (Array.isArray(results.items) ? results.items : [])
+                .map(item => ({ url: sanitizeURL(item?.url), title: String(item?.title || '').slice(0, 60) }))
+                .filter(item => item.url)
+                .slice(0, 8);
+            if (!items.length) return '';
+            const grid = items.map((item, index) => {
+                const visual = kind === 'image'
+                    ? `<img src="${sanitizeHTML(item.url)}" alt="" loading="lazy">`
+                    : `<span class="result-icon">${kind === 'audio' ? '🎵' : '🎬'}</span>`;
+                return `<button type="button" class="result-item ${index === 0 ? 'is-active' : ''}" data-result-url="${sanitizeHTML(item.url)}" data-result-kind="${kind}" data-result-title="${sanitizeHTML(item.title)}" title="${sanitizeHTML(item.title || item.url)}">${visual}<span class="result-label">${sanitizeHTML(item.title || `نتيجة ${index + 1}`)}</span></button>`;
+            }).join('');
+            return `<div class="results-card">
+                ${caption ? `<div class="results-caption">${sanitizeHTML(caption)}</div>` : ''}
+                <div class="results-grid">${grid}</div>
+                <div class="results-stage" data-results-stage></div>
+                <div class="results-hint">انقر أي نتيجة لتشغيلها أو عرضها</div>
+            </div>`;
+        }
+
+        function showChosenResult(button) {
+            const card = button.closest('.results-card');
+            const stage = card?.querySelector('[data-results-stage]');
+            if (!stage) return;
+            const url = sanitizeURL(button.dataset.resultUrl);
+            if (!url) return;
+            const kind = button.dataset.resultKind;
+            card.querySelectorAll('.result-item.is-active').forEach(item => item.classList.remove('is-active'));
+            button.classList.add('is-active');
+            const title = sanitizeHTML(button.dataset.resultTitle || '');
+            const safe = sanitizeHTML(url);
+            const preview = kind === 'audio'
+                ? `<audio controls autoplay preload="metadata" src="${safe}"></audio>`
+                : kind === 'video'
+                    ? `<video controls autoplay playsinline preload="metadata" src="${safe}"></video>`
+                    : `<img class="results-preview" src="${safe}" alt="${title}" onclick="openImageModal('${safe}')">`;
+            stage.innerHTML = `${preview}<div class="results-actions">${title ? `<span class="results-title">${title}</span>` : ''}<a class="media-link" href="${safe}" target="_blank" rel="noopener noreferrer">فتح الرابط</a><button type="button" class="tool-key" data-result-copy="${safe}"><i class="fas fa-copy"></i> نسخ</button></div>`;
         }
 
         function renderFileCard(msgKey, file, caption) {
@@ -780,6 +820,8 @@ import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebas
                     } else if (m.file && m.file.content) {
                         fileRegistry.set(child.key, m.file);
                         content = renderFileCard(child.key, m.file, m.txt);
+                    } else if (m.results && Array.isArray(m.results.items) && m.results.items.length) {
+                        content = renderResultsCard(m.results, m.caption || m.txt);
                     } else if (m.media === 'audio' || (!m.media && isAudioUrl(m.txt))) {
                         const safeAudio = sanitizeURL(m.txt) || '';
                         content = safeAudio
@@ -1487,7 +1529,8 @@ import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebas
             return candidates;
         }
 
-        async function searchArchiveMedia(queries, mediatype, extensions) {
+        async function searchArchiveCandidates(queries, mediatype, extensions) {
+            const found = [];
             const perQuery = 3;
             for (const rawQuery of queries.slice(0, 2)) {
                 const query = String(rawQuery || '').trim().slice(0, 120);
@@ -1515,13 +1558,19 @@ import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebas
                         .sort((a, b) => Number(a.size || 0) - Number(b.size || 0));
                     if (!usable.length) continue;
                     const chosen = usable[0];
-                    return {
-                        url: `https://archive.org/download/${encodeURIComponent(doc.identifier)}/${encodeURIComponent(String(chosen.name)).replace(/%2F/g, '/')}`,
-                        title: doc.title || chosen.name
-                    };
+                    const url = `https://archive.org/download/${encodeURIComponent(doc.identifier)}/${encodeURIComponent(String(chosen.name)).replace(/%2F/g, '/')}`;
+                    if (!found.some(item => item.url === url)) {
+                        found.push({ url, title: doc.title || chosen.name });
+                    }
+                    if (found.length >= 4) return found;
                 }
             }
-            return null;
+            return found;
+        }
+
+        async function searchArchiveMedia(queries, mediatype, extensions) {
+            const [best] = await searchArchiveCandidates(queries, mediatype, extensions);
+            return best || null;
         }
 
         async function searchCommonsMedia(queries, kind) {
@@ -1557,22 +1606,54 @@ import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebas
         }
 
         async function resolveMediaUrl(kind, queries) {
-            const primary = queries[0] || '';
-            if (kind === 'image') return searchCommonsImage(queries);
-            if (kind === 'audio') {
-                const openverse = await searchOpenverse(queries, 'audio');
-                const pick = pickBestCandidate(openverse, primary);
-                if (pick) return pick;
-                const commons = await searchCommonsMedia(queries, 'audio');
-                const commonsPick = pickBestCandidate(commons, primary);
-                if (commonsPick) return commonsPick;
-                const archive = await searchArchiveMedia(queries, 'audio', AUDIO_EXTENSIONS);
-                return archive?.url || null;
+            const [best] = await collectMediaCandidates(kind, queries, 1);
+            return best?.url || null;
+        }
+
+        async function collectMediaCandidates(kind, queries, limit) {
+            const pool = [];
+            const push = list => {
+                (Array.isArray(list) ? list : []).forEach(item => {
+                    if (!item?.url || pool.some(existing => existing.url === item.url)) return;
+                    pool.push(item);
+                });
+            };
+            if (kind === 'image') {
+                push(await searchOpenverse(queries, 'images'));
+                push(await searchCommonsMedia(queries, 'image'));
+                push(await searchCommonsImageCandidates(queries));
+            } else if (kind === 'audio') {
+                push(await searchOpenverse(queries, 'audio'));
+                push(await searchCommonsMedia(queries, 'audio'));
+                push(await searchArchiveCandidates(queries, 'audio', AUDIO_EXTENSIONS));
+            } else {
+                push(await searchArchiveCandidates(queries, 'movies', VIDEO_EXTENSIONS));
+                push(await searchCommonsMedia(queries, 'video'));
             }
-            const archiveVideo = await searchArchiveMedia(queries, 'movies', VIDEO_EXTENSIONS);
-            if (archiveVideo?.url) return archiveVideo.url;
-            const commonsVideo = await searchCommonsMedia(queries, 'video');
-            return pickBestCandidate(commonsVideo, primary);
+            const primary = queries[0] || '';
+            return pool
+                .map(item => ({ ...item, score: scoreMatch(`${item.title || ''} ${item.url || ''}`, primary) }))
+                .sort((a, b) => b.score - a.score || (a.weight || 0) - (b.weight || 0))
+                .slice(0, limit);
+        }
+
+        async function searchCommonsImageCandidates(queries) {
+            const extensions = ['jpg', 'jpeg', 'png', 'webp', 'gif'];
+            const candidates = [];
+            for (const rawQuery of queries.slice(0, 3)) {
+                const query = String(rawQuery || '').trim().slice(0, 120);
+                if (query.length < 2) continue;
+                const payload = await fetchJsonWithTimeout(`https://commons.wikimedia.org/w/api.php?action=query&format=json&origin=*&generator=search&gsrsearch=${encodeURIComponent(query)}&gsrnamespace=6&gsrlimit=12&prop=imageinfo&iiprop=url|mime&iiurlwidth=1200`);
+                const pages = payload?.query?.pages ? Object.values(payload.query.pages) : [];
+                pages.forEach(page => {
+                    const info = Array.isArray(page.imageinfo) ? page.imageinfo[0] : null;
+                    if (!info || !IMAGE_MIME_TYPES.includes(info.mime)) return;
+                    const safe = sanitizeURL(stripTracking(info.thumburl || info.url || ''));
+                    if (!safe || !extensions.some(extension => new RegExp(`\\.${extension}$`, 'i').test(safe))) return;
+                    candidates.push({ url: safe, title: String(page.title || '').replace(/^File:/, '') });
+                });
+            }
+            return candidates;
         }
 
         async function searchCommonsImageLegacy(queries) {
@@ -1997,7 +2078,9 @@ import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebas
                     }
                     const fallbackQueries = [safeUserMessage.replace(/[^\p{L}\p{N}\s]/gu, ' ').replace(/\s+/g, ' ').trim().slice(0, 70)];
                     const queries = plan?.queries?.length ? plan.queries : fallbackQueries;
-                    const mediaUrl = await resolveMediaUrl(requestKind, queries);
+                    const multiple = wantsMultipleResults(safeUserMessage);
+                    const candidates = await collectMediaCandidates(requestKind, queries, multiple ? 8 : 1);
+                    const mediaUrl = candidates[0]?.url || null;
                     if (mediaUrl) {
                         const message = {
                             uid: 'naz_ai',
@@ -2008,12 +2091,25 @@ import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebas
                             caption: (plan?.caption || `هذا اللي لقيته لك عن ${plan?.title || safeUserMessage.slice(0, 40)}`).slice(0, 160),
                             reply: { name: safeUserName, txt: safeUserMessage.slice(0, 120) }
                         };
-                        if (requestKind === 'image') message.isImage = true;
-                        else message.media = requestKind;
+                        if (multiple && candidates.length > 1) {
+                            message.results = {
+                                kind: requestKind,
+                                items: candidates.map(item => ({ url: item.url, title: String(item.title || '').slice(0, 60) }))
+                            };
+                            message.caption = `لقيته ${candidates.length} نتائج · اختر اللي يعجبك 👇`.slice(0, 160);
+                            message.txt = '';
+                        } else if (requestKind === 'image') {
+                            message.isImage = true;
+                        } else {
+                            message.media = requestKind;
+                        }
                         await push(ref(db, 'messages'), message);
-                        showNotification(requestKind === 'image' ? '✅ ناز أرسلت الصورة' : requestKind === 'audio' ? '✅ ناز أرسلت المقطع الصوتي' : '✅ ناز أرسلت الفيديو');
+                        showNotification(message.results
+                            ? `✅ ناز جابت ${message.results.items.length} نتائج`
+                            : requestKind === 'image' ? '✅ ناز أرسلت الصورة' : requestKind === 'audio' ? '✅ ناز أرسلت المقطع الصوتي' : '✅ ناز أرسلت الفيديو');
                         return;
                     }
+                    showNotification('⚠️ ما لقيت نتيجة مطابقة، خلي ناز ترد نصياً');
                     console.warn('No media matched, falling back to a text reply');
                 } catch (mediaError) {
                     console.warn('Media lookup failed, falling back to a text reply:', mediaError);
@@ -2442,6 +2538,23 @@ import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebas
         }
 
         document.getElementById('chat-flow').addEventListener('click', event => {
+            const resultTrigger = event.target.closest('[data-result-url]');
+            if (resultTrigger) {
+                event.preventDefault();
+                event.stopPropagation();
+                showChosenResult(resultTrigger);
+                return;
+            }
+            const resultCopy = event.target.closest('[data-result-copy]');
+            if (resultCopy) {
+                event.preventDefault();
+                event.stopPropagation();
+                const url = resultCopy.dataset.resultCopy;
+                if (navigator.clipboard?.writeText) {
+                    navigator.clipboard.writeText(url).then(() => showNotification('📋 نُسخ الرابط')).catch(() => showNotification('⚠️ تعذّر النسخ'));
+                }
+                return;
+            }
             const copyTrigger = event.target.closest('[data-file-copy]');
             if (copyTrigger) {
                 event.preventDefault();
