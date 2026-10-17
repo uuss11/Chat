@@ -52,18 +52,25 @@ export function detectRequestKind(text) {
 }
 
 export function buildMediaQueryPrompt(userMessage, userName, kind) {
+    const multiple = wantsMultipleResults(userMessage);
     const target = kind === 'audio'
         ? 'مقطع صوتي أو أغنية أو مقطوعة موسيقية'
         : kind === 'video'
             ? 'مقطع فيديو قصير'
             : 'صورة';
     return `المستخدم ${userName} طلب ${target}: "${userMessage}"
-اكتب من 1 إلى 3 عبارات بحث قصيرة (كلمتين إلى أربع كلمات) للعثور على ${target} مطابق تماماً للطلب.
+اكتب من ${multiple ? '3 إلى 5' : '1 إلى 3'} عبارات بحث قصيرة (كلمتين إلى أربع كلمات) للعثور على ${target} مطابق تماماً للطلب.
 - ركّز على جوهر الطلب (الشيء، المكان، النوع، الفنان إن ذُكر) وتجنّب الكلمات العامة.
 - فضّل الإنجليزية للدقة، وأضف عبارة عربية واحدة مناسبة.
 - لا تكتب روابط.
 أجب بـ JSON فقط بهذا الشكل وبلا أي نص إضافي:
 {"queries":["short english query","عبارة عربية"],"title":"عنوان قصير لما وجدته","caption":"جملة قصيرة باللهجة العراقية"}`;
+}
+
+export function wantsMultipleResults(text) {
+    const value = String(text || '');
+    if (!value) return false;
+    return /(اكثر من|أكثر من|عدة|عدّه|عدة نتائج|خيارات|اختيارات|اختيار|قائمة|عديد|بضعة|كم نتيجة|نتائج|نتیج|multiple|several|options|list of|few)/iu.test(value);
 }
 
 export function parseMediaPlan(rawText) {
