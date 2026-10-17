@@ -919,3 +919,31 @@ button:focus-visible, [role="button"]:focus-visible, a:focus-visible, input:focu
 .web-google:hover { filter: brightness(1.08); }
 .search-mode.search-google { display: inline-flex; align-items: center; gap: 6px; text-decoration: none; background: linear-gradient(135deg, #4285f4, #34a853); color: #fff; border-color: transparent; }
 .search-mode.search-google:hover { filter: brightness(1.08); }
+
+/* ===== بطاقة معلومات الحساب + QR ===== */
+.profile-card { border-radius: 16px; padding: 12px; background: rgba(255,255,255,.04); border: 1px solid rgba(255,255,255,.10); }
+.profile-card.is-ig { border-color: rgba(225,48,108,.35); }
+.profile-card.is-tt { border-color: rgba(37,244,238,.30); }
+.profile-top { display: flex; align-items: center; gap: 10px; }
+.profile-avatar { width: 54px; height: 54px; border-radius: 50%; object-fit: cover; border: 2px solid rgba(255,255,255,.18); display: flex; align-items: center; justify-content: center; }
+.profile-avatar.fallback { background: rgba(255,255,255,.08); }
+.profile-id { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.profile-id strong { font-size: .95rem; display: flex; align-items: center; gap: 5px; }
+.profile-id .verified { color: #4da3ff; font-size: .8rem; }
+.profile-id span { font-size: .76rem; opacity: .75; }
+.profile-open { margin-inline-start: auto; width: 32px; height: 32px; border-radius: 50%; display: inline-flex; align-items: center; justify-content: center; background: rgba(255,255,255,.08); color: inherit; text-decoration: none; }
+.profile-bio { margin-top: 8px; font-size: .82rem; line-height: 1.6; opacity: .9; }
+.profile-stats { margin-top: 10px; display: flex; gap: 14px; flex-wrap: wrap; }
+.profile-stat { display: flex; flex-direction: column; align-items: center; min-width: 64px; padding: 6px 10px; border-radius: 12px; background: rgba(255,255,255,.05); }
+.profile-stat strong { font-size: .9rem; }
+.profile-stat span { font-size: .68rem; opacity: .7; }
+.profile-meta { margin-top: 8px; font-size: .74rem; opacity: .72; }
+.qr-card { display: flex; gap: 12px; align-items: center; border-radius: 16px; padding: 12px; background: rgba(255,255,255,.05); border: 1px solid rgba(255,255,255,.12); flex-wrap: wrap; }
+.qr-img { width: 148px; height: 148px; border-radius: 12px; background: #fff; padding: 6px; object-fit: contain; cursor: zoom-in; }
+.qr-side { display: flex; flex-direction: column; gap: 8px; min-width: 140px; flex: 1; }
+.qr-title { font-size: .85rem; display: flex; align-items: center; gap: 6px; }
+.qr-data { font-size: .76rem; opacity: .8; word-break: break-all; direction: ltr; text-align: left; }
+.qr-actions { display: flex; gap: 8px; flex-wrap: wrap; }
+.qr-btn { display: inline-flex; align-items: center; gap: 6px; padding: 6px 12px; border-radius: 999px; font-size: .76rem; text-decoration: none; color: #fff; background: linear-gradient(135deg,#4f7cff,#7a4dff); }
+.qr-btn.ghost { background: rgba(255,255,255,.10); }
+.web-extra { background: linear-gradient(135deg,#ff5f6d,#ffc371); }
