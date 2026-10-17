@@ -1,7 +1,7 @@
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js";
         import { getAnalytics } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-analytics.js";
         import { getDatabase, ref, set, get, push, onValue, query, limitToLast, remove, update, runTransaction, serverTimestamp, onDisconnect } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-database.js";
-        import { TOOL_KINDS, renderToolCard, applyToolAction, parseToolResponse, isToolRequest, buildToolPrompt, isImageRequest, buildImageQueryPrompt, detectRequestKind, buildMediaQueryPrompt, parseMediaPlan, wantsMultipleResults, buildFilePrompt, parseFileResponse, mountToolTimers, clearToolTimers, mountToolCanvases, clearToolCanvases } from './naz-tools.js?v=9';
+        import { TOOL_KINDS, renderToolCard, applyToolAction, parseToolResponse, isToolRequest, buildToolPrompt, isImageRequest, buildImageQueryPrompt, detectRequestKind, buildMediaQueryPrompt, parseMediaPlan, wantsMultipleResults, buildFilePrompt, parseFileResponse, mountToolTimers, clearToolTimers, mountToolCanvases, clearToolCanvases } from './naz-tools.js?v=10';
 
         // ============================================
         // 🔐 Security Utilities
@@ -466,6 +466,19 @@ import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebas
             }
             html += `<span class="reaction-add-btn" onclick="event.stopPropagation(); showReactionPicker('${msgKey}', this)"><i class="far fa-smile"></i></span></div>`;
             return html;
+        }
+
+        // واجهة تشخيص اختيارية تظهر فقط مع ?debug=1 — تُستخدم لفحص البحث والوسائط.
+        if (new URLSearchParams(location.search).has('debug')) {
+            window.__nazDebug = {
+                collectMediaCandidates,
+                resolveMediaUrl,
+                renderResultsCard,
+                showChosenResult,
+                detectRequestKind,
+                wantsMultipleResults,
+                sanitizeURL
+            };
         }
 
         window.toggleReactionDetails = element => {
