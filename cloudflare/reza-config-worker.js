@@ -8,7 +8,9 @@
  *   GET /tiktok?user=               معلومات حساب تيك توك (صفحة التضمين)
  *   GET /instagram?user=            معلومات حساب انستغرام
  *   GET /image?prompt=&count=       توليد صورة (Workers AI) وتخزينها في KV
- *   GET /img/<key>                  إرجاع الصورة المخزنة
+ *   POST /upload                    رفع صورة/فيديو إلى KV (20 MiB، صلاحية 180 يوم)
+ *   GET /media/<id>                 إرجاع صورة/فيديو المستخدم من KV
+ *   GET /img/<key>                  إرجاع الصورة المولدة المخزنة
  *
  * Bindings: AI (Workers AI) + IMAGES (KV: reza-chat-images)
  * الأسرار: FIREBASE_* (المطلوبة)، GOOGLE_*، SERPER_API_KEY، BRAVE_API_KEY، IG_SESSIONID (اختيارية)
@@ -18,8 +20,8 @@ const ALLOW = ['https://uuss11.github.io', 'http://127.0.0.1:8123', 'http://loca
 const allow = origin => (ALLOW.includes(origin) ? origin : ALLOW[0]);
 const head = origin => ({
     'Access-Control-Allow-Origin': allow(origin),
-    'Access-Control-Allow-Methods': 'GET,OPTIONS',
-    'Access-Control-Allow-Headers': 'Content-Type',
+    'Access-Control-Allow-Methods': 'GET,POST,OPTIONS',
+    'Access-Control-Allow-Headers': 'Content-Type,X-Chat-User,X-Chat-Proof',
     'Vary': 'Origin',
     'Content-Type': 'application/json; charset=utf-8',
     'Cache-Control': 'no-store'
@@ -352,6 +354,103 @@ export default {
                 model = res.model;
             }
             return json({ ok: true, urls, model, ms: Date.now() - started }, 200, origin);
+        }
+
+        if (path === '/upload' && request.method === 'POST') {
+            if (!env.IMAGES) return json({ ok: false, error: 'storage_unavailable' }, 503, origin);
+            const user = String(request.headers.get('X-Chat-User') || '').toLowerCase();
+            const proof = String(request.headers.get('X-Chat-Proof') || '').toLowerCase();
+            if (!/^[a-z0-9_-]{1,32}$/.test(user) || !/^[a-f0-9]{64}$/.test(proof)) {
+                return json({ ok: false, error: 'auth_required' }, 401, origin);
+            }
+            try {
+                const dbUrl = String(env.FIREBASE_DB_URL || '').replace(/\/+$/, '');
+                if (!dbUrl) return json({ ok: false, error: 'upload_auth_unavailable' }, 503, origin);
+                const authResponse = await fetch(dbUrl + '/users/' + encodeURIComponent(user) + '.json', { headers: { Accept: 'application/json' } });
+                if (!authResponse.ok) return json({ ok: false, error: 'upload_auth_unavailable' }, 503, origin);
+                const account = await authResponse.json();
+                if (!account || account.isBanned || account.passwordHashed !== true || account.password !== proof) {
+                    return json({ ok: false, error: 'auth_required' }, 401, origin);
+                }
+            } catch (error) {
+                console.error('Media upload identity check failed:', String(error).slice(0, 100));
+                return json({ ok: false, error: 'upload_auth_unavailable' }, 503, origin);
+            }
+            const contentType = String(request.headers.get('Content-Type') || '').split(';')[0].trim().toLowerCase();
+            const allowedTypes = new Set([
+                'image/jpeg', 'image/png', 'image/gif', 'image/webp', 'image/avif', 'image/heic', 'image/heif',
+                'video/mp4', 'video/webm', 'video/quicktime', 'video/3gpp', 'video/ogg'
+            ]);
+            if (!allowedTypes.has(contentType)) return json({ ok: false, error: 'unsupported_media_type' }, 415, origin);
+            const maxBytes = 20 * 1024 * 1024;
+            const contentLength = Number(request.headers.get('Content-Length') || 0);
+            if (contentLength > maxBytes) return json({ ok: false, error: 'file_too_large' }, 413, origin);
+            const quotaKey = 'q/' + user + '/' + new Date().toISOString().slice(0, 10);
+            let usedToday = 0;
+            try { usedToday = Number(await env.IMAGES.get(quotaKey) || 0) || 0; }
+            catch (error) { return json({ ok: false, error: 'kv_write_failed' }, 503, origin); }
+            if (contentLength && usedToday + contentLength > 100 * 1024 * 1024) return json({ ok: false, error: 'daily_upload_limit' }, 429, origin);
+            let bytes;
+            try { bytes = await request.arrayBuffer(); }
+            catch (error) { return json({ ok: false, error: 'invalid_upload' }, 400, origin); }
+            if (!bytes.byteLength || bytes.byteLength > maxBytes) return json({ ok: false, error: bytes.byteLength ? 'file_too_large' : 'empty_file' }, bytes.byteLength ? 413 : 400, origin);
+            if (usedToday + bytes.byteLength > 100 * 1024 * 1024) return json({ ok: false, error: 'daily_upload_limit' }, 429, origin);
+            const id = crypto.randomUUID();
+            try {
+                await env.IMAGES.put('u/' + id, bytes, {
+                    expirationTtl: 15552000,
+                    metadata: { contentType }
+                });
+                await env.IMAGES.put(quotaKey, String(usedToday + bytes.byteLength), { expirationTtl: 172800 });
+            } catch (error) {
+                console.error('KV media upload failed:', String(error).slice(0, 120));
+                return json({ ok: false, error: 'kv_write_failed' }, 507, origin);
+            }
+            return json({ ok: true, url: u.origin + '/media/' + id, size: bytes.byteLength, contentType }, 201, origin);
+        }
+
+        if (path.indexOf('/media/') === 0 && request.method === 'GET') {
+            const id = path.slice(7);
+            if (!/^[0-9a-f-]{36}$/i.test(id)) return new Response('bad media id', { status: 400 });
+            const cache = caches.default;
+            const ck = new Request('https://reza-chat-internal-cache.local/media/' + id);
+            const range = request.headers.get('Range') || '';
+            if (!range) {
+                try {
+                    const hit = await cache.match(ck);
+                    if (hit) return hit;
+                } catch (error) { /* ignore cache errors */ }
+            }
+            const got = await env.IMAGES.getWithMetadata('u/' + id, 'arrayBuffer');
+            if (!got || !got.value) return new Response('not found', { status: 404 });
+            const total = got.value.byteLength;
+            let body = got.value;
+            let status = 200;
+            const headers = {
+                'Content-Type': (got.metadata && got.metadata.contentType) || 'application/octet-stream',
+                'Content-Length': String(total),
+                'Accept-Ranges': 'bytes',
+                'Cache-Control': 'public, max-age=86400',
+                'X-Content-Type-Options': 'nosniff',
+                'Access-Control-Allow-Origin': '*'
+            };
+            if (range) {
+                const match = /^bytes=(\d*)-(\d*)$/.exec(range);
+                if (!match || (!match[1] && !match[2])) return new Response(null, { status: 416, headers: { 'Content-Range': 'bytes */' + total } });
+                let start = match[1] ? Number(match[1]) : Math.max(0, total - Number(match[2]));
+                let end = match[2] && match[1] ? Number(match[2]) : total - 1;
+                if (start > end || start >= total || end < 0) return new Response(null, { status: 416, headers: { 'Content-Range': 'bytes */' + total } });
+                end = Math.min(end, total - 1);
+                body = got.value.slice(start, end + 1);
+                status = 206;
+                headers['Content-Length'] = String(end - start + 1);
+                headers['Content-Range'] = `bytes ${start}-${end}/${total}`;
+            }
+            const res = new Response(body, { status, headers });
+            if (!range) {
+                try { ctx.waitUntil(cache.put(ck, res.clone())); } catch (error) { /* ignore cache errors */ }
+            }
+            return res;
         }
 
         if (path.indexOf('/img/') === 0) {

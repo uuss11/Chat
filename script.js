@@ -1590,25 +1590,97 @@ import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebas
             } catch { return false; }
         }
 
+        let isUploadingMedia = false;
+        const MAX_CHAT_MEDIA_BYTES = 20 * 1024 * 1024;
+        const CHAT_MEDIA_TYPES = new Set([
+            'image/jpeg', 'image/png', 'image/gif', 'image/webp', 'image/avif', 'image/heic', 'image/heif',
+            'video/mp4', 'video/webm', 'video/quicktime', 'video/3gpp', 'video/ogg'
+        ]);
+        const MEDIA_TYPE_BY_EXTENSION = {
+            jpg: 'image/jpeg', jpeg: 'image/jpeg', png: 'image/png', gif: 'image/gif', webp: 'image/webp', avif: 'image/avif', heic: 'image/heic', heif: 'image/heif',
+            mp4: 'video/mp4', m4v: 'video/mp4', webm: 'video/webm', mov: 'video/quicktime', '3gp': 'video/3gpp', ogv: 'video/ogg'
+        };
         window.sendImage = () => {
-            const url = prompt('أدخل رابط الصورة:');
-            if (url && isImageUrl(url)) {
-                const caption = prompt('أضف وصف للصورة (اختياري):') || '';
-                push(ref(db, 'messages'), {
+            if (!me) return showNotification('سجّل دخولك أولاً حتى ترسل ملف.');
+            if (isUploadingMedia) return showNotification('انتظر اكتمال رفع الملف الحالي.');
+            document.getElementById('media-file-input')?.click();
+        };
+        window.handleMediaSelection = async (picker) => {
+            const file = picker?.files?.[0];
+            if (picker) picker.value = '';
+            if (!file) return;
+            if (!me || !isFirebaseReady) return showNotification('الدردشة مو جاهزة حالياً؛ حاول بعد شوي.');
+            const ext = String(file.name || '').split('.').pop().toLowerCase();
+            const contentType = String(file.type || MEDIA_TYPE_BY_EXTENSION[ext] || '').toLowerCase();
+            if (!CHAT_MEDIA_TYPES.has(contentType)) {
+                showNotification('صيغة الملف غير مدعومة؛ اختار صورة أو فيديو شائع.');
+                return;
+            }
+            if (!file.size || file.size > MAX_CHAT_MEDIA_BYTES) {
+                showNotification('حجم الملف لازم يكون أقل من 20 ميغابايت.');
+                return;
+            }
+            const api = resolveCloudApiUrl();
+            if (!api) return showNotification('خدمة رفع الملفات مو مضبوطة حالياً.');
+            if (!/^[a-f0-9]{64}$/i.test(String(me.password || ''))) return showNotification('جلسة الحساب قديمة؛ سجّل خروج وادخل من جديد.');
+            const isVideo = contentType.startsWith('video/');
+            isUploadingMedia = true;
+            showNotification(`جاري رفع ${isVideo ? 'الفيديو' : 'الصورة'}... 0%`);
+            try {
+                const result = await new Promise((resolve, reject) => {
+                    const xhr = new XMLHttpRequest();
+                    let lastPercent = 0;
+                    xhr.open('POST', api + '/upload');
+                    xhr.setRequestHeader('Content-Type', contentType);
+                    xhr.setRequestHeader('X-Chat-User', me.user);
+                    xhr.setRequestHeader('X-Chat-Proof', me.password);
+                    xhr.upload.onprogress = event => {
+                        if (!event.lengthComputable) return;
+                        const percent = Math.min(100, Math.floor((event.loaded / event.total) * 100));
+                        if (percent === 100 || percent >= lastPercent + 25) {
+                            lastPercent = percent;
+                            showNotification(`جاري رفع ${isVideo ? 'الفيديو' : 'الصورة'}... ${percent}%`);
+                        }
+                    };
+                    xhr.onerror = () => reject(new Error('network'));
+                    xhr.onload = () => {
+                        let data = {};
+                        try { data = JSON.parse(xhr.responseText || '{}'); } catch { /* malformed worker response */ }
+                        if (xhr.status < 200 || xhr.status >= 300 || !data.ok || !data.url) {
+                            const error = new Error(data.error || 'upload_failed');
+                            error.status = xhr.status;
+                            reject(error);
+                            return;
+                        }
+                        resolve(data);
+                    };
+                    xhr.send(file);
+                });
+                const mediaUrl = sanitizeURL(result.url);
+                if (!mediaUrl || new URL(mediaUrl).origin !== new URL(api).origin) throw new Error('bad_upload_url');
+                const message = {
                     uid: me.user,
                     name: me.name,
-                    txt: url,
+                    txt: mediaUrl,
                     time: serverTimestamp(),
-                    avatar: me.avatar,
-                    isImage: true,
-                    caption: caption
-                }).then(() => {
-                    showNotification('تم إرسال الصورة! 📸');
-                }).catch(() => {
-                    showNotification('❌ فشل في إرسال الصورة');
-                });
-            } else if (url) {
-                alert('الرجاء إدخال رابط صورة صحيح');
+                    avatar: me.avatar || ''
+                };
+                if (isVideo) message.media = 'video';
+                else message.isImage = true;
+                await push(ref(db, 'messages'), message);
+                showNotification(`تم إرسال ${isVideo ? 'الفيديو' : 'الصورة'} للدردشة.`);
+            } catch (error) {
+                console.error('Media upload failed:', error);
+                const reason = String(error?.message || '');
+                if (reason === 'file_too_large') showNotification('الملف أكبر من الحد المسموح (20 ميغابايت).');
+                else if (reason === 'unsupported_media_type') showNotification('صيغة الصورة أو الفيديو غير مدعومة.');
+                else if (reason === 'kv_write_failed') showNotification('تعذر التخزين أو انتهت حصة Cloudflare المجانية؛ جرّب لاحقاً.');
+                else if (reason === 'daily_upload_limit') showNotification('وصلت حد الرفع اليومي (100 ميغابايت للحساب).');
+                else if (reason === 'auth_required') showNotification('جلسة الحساب انتهت؛ سجّل خروج وادخل من جديد.');
+                else if (reason === 'upload_auth_unavailable') showNotification('تعذر التحقق من الحساب؛ حاول بعد شوي.');
+                else showNotification('فشل رفع الملف أو إرساله؛ تحقق من الاتصال وحاول مرة ثانية.');
+            } finally {
+                isUploadingMedia = false;
             }
         };
 
