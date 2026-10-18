@@ -1050,3 +1050,39 @@ button:focus-visible, [role="button"]:focus-visible, a:focus-visible, input:focu
 }
 @keyframes chipPop { 0% { transform: scale(1); } 45% { transform: scale(1.35); } 100% { transform: scale(1); } }
 @media (prefers-reduced-motion: reduce) { .reaction-burst-emoji { display: none; } }
+
+/* NAZ game seats, score and compact responsive theme picker */
+.game-players { display: flex; align-items: center; justify-content: center; gap: 9px; margin: 0 0 10px; flex-wrap: wrap; }
+.game-player { padding: 5px 10px; border: 1px solid var(--glass-border); border-radius: 999px; color: var(--text-secondary); font-size: .72rem; }
+.game-player.is-turn { color: var(--text-primary); border-color: var(--primary); box-shadow: 0 0 14px var(--primary-glow); }
+.game-vs { color: var(--text-muted); font-size: .68rem; }
+.game-scoreboard { display: flex; justify-content: center; gap: 8px; flex-wrap: wrap; margin: 8px 0; color: var(--text-muted); font-size: .68rem; }
+.game-scoreboard span { padding: 4px 8px; border-radius: 999px; background: var(--glass-bg); border: 1px solid var(--glass-border); }
+.tool-board-cell:disabled { cursor: not-allowed; opacity: .68; }
+.connect-four-grid { width: min(100%, 360px); margin: 8px auto; padding: 7px; display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 5px; border-radius: 15px; background: linear-gradient(145deg, var(--secondary), var(--primary)); box-shadow: 0 8px 24px rgba(0,0,0,.18); }
+.connect-four-cell { aspect-ratio: 1; min-width: 0; padding: 0; display: grid; place-items: center; border: 1px solid rgba(255,255,255,.24); border-radius: 50%; background: rgba(8,16,29,.82); cursor: pointer; }
+.connect-four-cell span { width: 68%; height: 68%; border-radius: 50%; background: transparent; }
+.connect-four-cell.is-x span { background: #fb7185; box-shadow: 0 0 12px rgba(251,113,133,.65); }
+.connect-four-cell.is-o span { background: #facc15; box-shadow: 0 0 12px rgba(250,204,21,.6); }
+.connect-four-cell:not(:disabled):hover { background: rgba(255,255,255,.22); }
+.connect-four-cell:disabled { cursor: not-allowed; }
+.theme-picker-modal { padding: max(12px, env(safe-area-inset-top)) 12px max(12px, env(safe-area-inset-bottom)); }
+.theme-picker-modal .modal-content { width: min(460px, calc(100vw - 24px)); max-height: min(76dvh, 620px); overflow-y: auto; overscroll-behavior: contain; padding: 22px 18px 18px; }
+.theme-picker-hint { margin: -8px 0 14px; text-align: center; color: var(--text-muted); font-size: .72rem; line-height: 1.7; }
+.theme-picker-list { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(132px, 100%), 1fr)); gap: 9px; }
+.theme-picker-tile { display: flex; align-items: center; gap: 9px; min-width: 0; padding: 9px; border-radius: 13px; border: 1px solid var(--glass-border); background: var(--glass-bg); color: var(--text-primary); cursor: pointer; text-align: right; }
+.theme-picker-tile:hover, .theme-picker-tile.is-active { border-color: var(--primary); box-shadow: 0 0 14px var(--primary-glow); }
+.theme-picker-swatch { width: 34px; height: 34px; flex: 0 0 34px; border-radius: 10px; border: 1px solid rgba(255,255,255,.22); }
+.theme-picker-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: .74rem; font-weight: 700; }
+.theme-preview-card { width: min(390px, 100%); margin: 10px auto; padding: 13px; border: 1px solid var(--glass-border); border-radius: 17px; background: linear-gradient(140deg, var(--preview-bg1), var(--preview-bg2)); color: var(--preview-text); }
+.theme-preview-title { font-weight: 800; margin-bottom: 8px; }
+.theme-preview-bubble { padding: 9px 11px; border-radius: 13px 13px 3px 13px; background: var(--preview-primary); color: var(--preview-text); }
+.theme-preview-meta { margin-top: 7px; font-size: .67rem; opacity: .8; }
+.theme-preview-actions { display: flex; justify-content: center; gap: 8px; margin-top: 10px; flex-wrap: wrap; }
+.theme-preview-actions button { min-width: 90px; }
+@media (max-width: 420px) {
+  .theme-picker-modal .modal-content { padding: 20px 12px 14px; }
+  .theme-picker-list { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 7px; }
+  .theme-picker-tile { padding: 7px; }
+  .theme-picker-swatch { width: 30px; height: 30px; flex-basis: 30px; }
+}
