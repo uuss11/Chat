@@ -767,7 +767,7 @@ export function isToolRequest(text) {
     if (!value) return false;
     const toolWords = /(أداة|اداة|آلة|الة|widget|أداة تفاعلية|أدوات)/iu;
     const buildWords = /(سوي|سوّي|اعمل|إعمل|اعملي|اصنع|صمم|صمّمي|انشئ|أنشئ|ضيف|أضف|اريد|أريد|محتاج|ابغى|أبغى|خلّي|خلي|قدم|قدّم|ركب|سوولي|سويلي|اعمليلي|ابني)/iu;
-    const kinds = /(حاسبة|حاسبه|آلة حاسبة|عدّاد|عداد|مؤقت|مؤقّت|تايمر|تصويت|استفتاء|قائمة|تشيك ليست|مهام|ملاحظات|نوت|نرد|زهر|قرعة|محوّل|محول|تحويل وحدات|إكس|اكس او|تيك تاك تو|x-o|لعبة|connect\s*[- ]?4|connect\s*[- ]?four|four in a row|أربع على التوالي|اربع على التوالي)/iu;
+    const kinds = /(حاسبة|حاسبه|آلة حاسبة|عدّاد|عداد|مؤقت|مؤقّت|تايمر|تصويت|استفتاء|قائمة|تشيك ليست|مهام|ملاحظات|نوت|نرد|زهر|قرعة|محوّل|محول|تحويل وحدات|إكس|اكس او|تيك تاك تو|x-o|لعبة|محرك\s*(?:بحث|البحث)|بحث\s+(?:صور|ويب|الويب|عادي)|search\s+(?:engine|widget)|connect\s*[- ]?4|connect\s*[- ]?four|four in a row|أربع على التوالي|اربع على التوالي)/iu;
     if (toolWords.test(value) && (buildWords.test(value) || kinds.test(value))) return true;
     return buildWords.test(value) && kinds.test(value);
 }
@@ -800,6 +800,7 @@ ${memoryContext ? `سياق المحادثة القريب وتفضيلات صا�
 - إذا طلب لعباً جماعياً، أظهري من يلعب ومن عليه الدور، وامتنعي عن قبول لاعب زائد إذا كان عدد المقاعد محدداً. لا تسمحي بحركة غير دور صاحب الدور.
 - إذا كانت اللعبة XO/اكس او/تيك تاك تو، استخدمي kind=tictactoe: المرسل X، مقعد O لشخص واحد فقط، منع غير اللاعبين من اللعب، فحص كل خطوط الفوز والتعادل، سجل انتصارات وتعادلات يبقى بين الجولات، وناز تأخذ O كخصم ذكي بعد مهلة 15 ثانية فقط إن لم ينضم لاعب O.
 - إذا كانت أربع على التوالي/Connect Four، استخدمي kind=connect4: لوحة 7×6، إسقاط من أعلى العمود مع الجاذبية، الفوز بأربع متصلة أفقياً أو عمودياً أو قطرياً، مقعدان X وO فقط، سجل نتائج، وناز خصم O ذكي بعد 15 ثانية إذا ظل المقعد شاغراً.
+- طلب محرك بحث أو بحث ويب/صور تفاعلي يعني دائماً kind=search (أداة بحث جاهزة بحقل ثابت لا يختفي، وأزرار للويب والصور)، ولا تبنيه كـ custom.
 - إذا لم يوجد نوع جاهز مطابق، استخدمي kind=custom وابني أفضل تجربة ممكنة من المكوّنات المسموحة أدناه. اشرحي قواعدها داخل config.intro، واجعلي الحالة والعمليات متماسكة؛ ابتكري ألعاب تحدٍ/تخمين/تدريب وأدوات مفيدة، ولا تعيدي أداة موجودة تحت اسم جديد.
 - اجعلي العنوان والوصف والملصقات عربية قصيرة وواضحة، اختياراً بصرياً أنيقاً، عناصر محدودة ومقروءة على الهاتف، لا نصاً طويلاً أو مكوّنات زائدة. لا تتركي حالة ابتدائية فارغة ولا تطلبي من المستخدم إكمال بناء الأداة.
 - استخدمي فقط مخطط المكوّنات المحدد هنا؛ لا JavaScript أو HTML أو CSS خام، ولا أكواد أو روابط من النموذج.
@@ -812,7 +813,7 @@ custom: config {intro, controls:[...حتى 12], initial:{...}}. كل key إنج�
 - {"type":"timer","key":"t","seconds":60}؛ {"type":"visual","key":"hearts","preset":"heart","label":"انقر"}. preset: heart, stars, confetti, drawing.
 
 أخرجي JSON صالحاً فقط، بلا markdown ولا كلام قبله أو بعده:
-{"kind":"tictactoe أو custom أو نوع مناسب","title":"اسم تجربة جذاب","caption":"وصف حماسي قصير","config":{"intro":"طريقة اللعب","controls":[],"initial":{}}}`;
+{"kind":"tictactoe أو search أو custom أو نوع مناسب","title":"اسم تجربة جذاب","caption":"وصف حماسي قصير","config":{"intro":"طريقة اللعب أو وصف البحث","placeholder":"ابحث في الويب أو الصور...","controls":[],"initial":{}}}`;
 }
 
 export function parseToolResponse(rawText) {
@@ -1004,7 +1005,10 @@ export function applyToolAction(kind, config, currentState, action, payload, ctx
                 nextState.oName = 'ناز';
                 nextState.waitUntil = null;
             }
-            if (nextState.oPlayer !== 'naz_ai' || nextState.turn !== 'O') return nextState === state ? null : nextState;
+            if (nextState.oPlayer !== 'naz_ai' || nextState.turn !== 'O') {
+                const nazJustJoined = !state.oPlayer && nextState.oPlayer === 'naz_ai';
+                return nazJustJoined ? nextState : null;
+            }
             const index = bestTicTacToeMove(board, 'O');
             if (index < 0) return null;
             board[index] = 'O';
@@ -1047,7 +1051,10 @@ export function applyToolAction(kind, config, currentState, action, payload, ctx
                 nextState.oName = 'ناز';
                 nextState.waitUntil = null;
             }
-            if (nextState.oPlayer !== 'naz_ai' || nextState.turn !== 'O') return nextState === state ? null : nextState;
+            if (nextState.oPlayer !== 'naz_ai' || nextState.turn !== 'O') {
+                const nazJustJoined = !state.oPlayer && nextState.oPlayer === 'naz_ai';
+                return nazJustJoined ? nextState : null;
+            }
             const column = bestConnectFourColumn(board);
             if (column < 0) return null;
             connectFourDrop(board, column, 'O');

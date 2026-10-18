@@ -180,6 +180,8 @@
 
         .reply-preview { font-size: 0.7rem; padding: 8px 10px; margin-bottom: 8px; border-radius: 8px; background: rgba(0, 0, 0, 0.2); border-right: 3px solid var(--accent); }
         .msg-container.mine .reply-preview { background: rgba(0, 0, 0, 0.15); color: rgba(0, 0, 0, 0.8); border-right-color: #000; }
+.reply-preview.is-deleted { opacity: .72; border-right-color: #87909a; }
+.reply-preview.is-deleted .reply-text { font-style: italic; }
         .reply-name { font-weight: 600; opacity: 0.9; }
         .reply-text { opacity: 0.7; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 
