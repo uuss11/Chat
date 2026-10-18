@@ -197,6 +197,15 @@
         #msg-input { flex: 1; }
         .send-btn { width: 45px; height: 45px; border-radius: 14px; background: linear-gradient(135deg, var(--primary), var(--secondary)); border: none; color: #000; font-size: 1.1rem; display: flex; align-items: center; justify-content: center; cursor: pointer; transition: all 0.3s ease; }
         .send-btn:hover { transform: scale(1.05) rotate(-5deg); box-shadow: 0 10px 30px var(--primary-glow); }
+        .mention-suggestions { position: absolute; z-index: 120; right: 12px; bottom: calc(100% - 2px); width: min(320px, calc(100vw - 24px)); padding: 6px; border: 1px solid var(--glass-border); border-radius: 14px; background: rgba(12, 22, 24, .96); box-shadow: 0 14px 38px rgba(0,0,0,.38); backdrop-filter: blur(18px); }
+        .mention-suggestions[hidden] { display: none !important; }
+        .mention-suggestion { display: flex; width: 100%; align-items: center; gap: 10px; padding: 10px; border: 0; border-radius: 10px; background: transparent; color: var(--text-primary); text-align: right; cursor: pointer; }
+        .mention-suggestion:hover, .mention-suggestion:focus-visible { outline: none; background: rgba(125,211,252,.12); }
+        .mention-suggestion-icon { display: grid; width: 36px; height: 36px; flex: 0 0 36px; place-items: center; border-radius: 11px; color: var(--primary); background: rgba(125,211,252,.12); }
+        .mention-suggestion-copy { display: flex; min-width: 0; flex: 1; flex-direction: column; gap: 2px; }
+        .mention-suggestion-copy strong { font-size: .84rem; }
+        .mention-suggestion-copy small { color: var(--text-muted); font-size: .7rem; }
+        .mention-suggestion-hint { color: var(--text-muted); font-size: .68rem; }
 
         .context-overlay { position: fixed; inset: 0; background: rgba(0, 0, 0, 0.6); backdrop-filter: blur(5px); z-index: 10000; display: none; align-items: center; justify-content: center; animation: fadeIn 0.2s ease; }
         @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
