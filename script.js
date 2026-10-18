@@ -4097,16 +4097,18 @@ ${memoryContext ? `ذاكرة المحادثة: استخدمي منها فقط �
             }
         });
 
-        // تهيئة Firebase عند تحميل الصفحة والتحقق من الجلسة المحفوظة
-        document.addEventListener('DOMContentLoaded', async () => {
+        // تهيئة Firebase بعد DOM؛ وحدات ES قد تبدأ بعد DOMContentLoaded في بعض المتصفحات/الويب فيو.
+        const bootstrapChat = async () => {
             loadStoredKeyStatus();
             await initFirebase();
             updateCloudConfigStatus();
-            // محاولة تسجيل الدخول التلقائي
-            setTimeout(async () => {
-                await checkSavedSession();
-            }, 1000);
-        });
+            setTimeout(async () => { await checkSavedSession(); }, 1000);
+        };
+        if (document.readyState === 'loading') {
+            document.addEventListener('DOMContentLoaded', bootstrapChat, { once: true });
+        } else {
+            void bootstrapChat();
+        }
 
         // ============================================
         // 🛡️ حماية ضد Console Injection
