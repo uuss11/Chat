@@ -716,7 +716,13 @@ import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebas
                 Object.freeze(firebaseConfig);
                 app = initializeApp(firebaseConfig);
                 db = getDatabase(app);
-                analytics = getAnalytics(app);
+                // Analytics اختياري: حجب القياس في المتصفح لا يجوز أن يعطّل تسجيل الدخول أو قاعدة البيانات.
+                try {
+                    analytics = getAnalytics(app);
+                } catch (analyticsError) {
+                    analytics = null;
+                    console.info('Firebase Analytics unavailable; chat continues without analytics:', analyticsError?.message || analyticsError);
+                }
                 isFirebaseReady = true;
                 console.log('✅ Firebase initialized successfully');
                 return true;
@@ -1265,9 +1271,7 @@ import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebas
             const savedPass = getCookie('reza_pass');
             
             if (savedUser && savedPass) {
-                if (!isFirebaseReady) {
-                    await initFirebase();
-                }
+                if (!isFirebaseReady && !(await initFirebase())) return false;
                 
                 try {
                     const snap = await get(ref(db, 'users/' + savedUser));
