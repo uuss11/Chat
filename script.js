@@ -1676,6 +1676,7 @@ import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebas
                 else if (reason === 'unsupported_media_type') showNotification('صيغة الصورة أو الفيديو غير مدعومة.');
                 else if (reason === 'kv_write_failed') showNotification('تعذر التخزين أو انتهت حصة Cloudflare المجانية؛ جرّب لاحقاً.');
                 else if (reason === 'daily_upload_limit') showNotification('وصلت حد الرفع اليومي (100 ميغابايت للحساب).');
+                else if (reason === 'storage_capacity_limit') showNotification('وصلت سعة الوسائط المؤقتة؛ جرّب لاحقاً بعد انتهاء صلاحية الملفات القديمة.');
                 else if (reason === 'auth_required') showNotification('جلسة الحساب انتهت؛ سجّل خروج وادخل من جديد.');
                 else if (reason === 'upload_auth_unavailable') showNotification('تعذر التحقق من الحساب؛ حاول بعد شوي.');
                 else showNotification('فشل رفع الملف أو إرساله؛ تحقق من الاتصال وحاول مرة ثانية.');
