@@ -1,4 +1,9 @@
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js";
+if (new URLSearchParams(location.search).has('debug')) {
+    window.__chatBootstrapTrace = { stage: 'module-start', errors: [] };
+    window.addEventListener('error', event => window.__chatBootstrapTrace.errors.push({ type: 'error', message: String(event.message || '').slice(0, 180), line: event.lineno || 0 }));
+    window.addEventListener('unhandledrejection', event => window.__chatBootstrapTrace.errors.push({ type: 'rejection', message: String(event.reason?.message || event.reason || '').slice(0, 180) }));
+}
         import { getAnalytics } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-analytics.js";
         import { getDatabase, ref, set, get, push, onValue, query, limitToLast, remove, update, runTransaction, serverTimestamp, onDisconnect } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-database.js";
         import { TOOL_KINDS, renderToolCard, applyToolAction, parseToolResponse, isToolRequest, buildToolPrompt, isImageRequest, buildImageQueryPrompt, detectRequestKind, buildMediaQueryPrompt, parseMediaPlan, wantsMultipleResults, buildFilePrompt, parseFileResponse, mountToolTimers, clearToolTimers, mountToolCanvases, clearToolCanvases } from './naz-tools.js?v=36';
@@ -1030,6 +1035,7 @@ import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebas
 
         // واجهة تشخيص اختيارية تظهر فقط مع ?debug=1 — تُستخدم لفحص البحث والوسائط.
         if (new URLSearchParams(location.search).has('debug')) {
+            if (window.__chatBootstrapTrace) window.__chatBootstrapTrace.stage = 'debug-object';
             window.__nazDebug = {
                 collectMediaCandidates,
                 resolveMediaUrl,
@@ -4097,6 +4103,7 @@ ${memoryContext ? `ذاكرة المحادثة: استخدمي منها فقط �
             }
         });
 
+        if (window.__chatBootstrapTrace) window.__chatBootstrapTrace.stage = 'bottom-reached';
         // تهيئة Firebase بعد DOM؛ وحدات ES قد تبدأ بعد DOMContentLoaded في بعض المتصفحات/الويب فيو.
         const bootstrapChat = async () => {
             loadStoredKeyStatus();
