@@ -385,7 +385,8 @@ export default {
             const maxBytes = 20 * 1024 * 1024;
             const contentLength = Number(request.headers.get('Content-Length') || 0);
             if (contentLength > maxBytes) return json({ ok: false, error: 'file_too_large' }, 413, origin);
-            const quotaKey = 'q/' + user + '/' + new Date().toISOString().slice(0, 10);
+            const now = new Date();
+            const quotaKey = 'q/' + user + '/' + now.toISOString().slice(0, 10);
             let usedToday = 0;
             try { usedToday = Number(await env.IMAGES.get(quotaKey) || 0) || 0; }
             catch (error) { return json({ ok: false, error: 'kv_write_failed' }, 503, origin); }
@@ -395,6 +396,17 @@ export default {
             catch (error) { return json({ ok: false, error: 'invalid_upload' }, 400, origin); }
             if (!bytes.byteLength || bytes.byteLength > maxBytes) return json({ ok: false, error: bytes.byteLength ? 'file_too_large' : 'empty_file' }, bytes.byteLength ? 413 : 400, origin);
             if (usedToday + bytes.byteLength > 100 * 1024 * 1024) return json({ ok: false, error: 'daily_upload_limit' }, 429, origin);
+            const monthKeys = Array.from({ length: 7 }, (_, offset) => {
+                const month = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() - offset, 1));
+                return 'g/' + month.toISOString().slice(0, 7);
+            });
+            let monthTotals;
+            try { monthTotals = await Promise.all(monthKeys.map(key => env.IMAGES.get(key))); }
+            catch (error) { return json({ ok: false, error: 'kv_write_failed' }, 503, origin); }
+            const rollingUploadBytes = monthTotals.reduce((sum, value) => sum + (Number(value) || 0), 0);
+            const currentMonthBytes = Number(monthTotals[0]) || 0;
+            const rollingUploadLimit = 512 * 1024 * 1024;
+            if (rollingUploadBytes + bytes.byteLength > rollingUploadLimit) return json({ ok: false, error: 'storage_capacity_limit' }, 429, origin);
             const id = crypto.randomUUID();
             try {
                 await env.IMAGES.put('u/' + id, bytes, {
@@ -402,6 +414,7 @@ export default {
                     metadata: { contentType }
                 });
                 await env.IMAGES.put(quotaKey, String(usedToday + bytes.byteLength), { expirationTtl: 172800 });
+                await env.IMAGES.put(monthKeys[0], String(currentMonthBytes + bytes.byteLength), { expirationTtl: 18144000 });
             } catch (error) {
                 console.error('KV media upload failed:', String(error).slice(0, 120));
                 return json({ ok: false, error: 'kv_write_failed' }, 507, origin);
