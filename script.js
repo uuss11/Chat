@@ -595,7 +595,7 @@ if (new URLSearchParams(location.search).has('debug')) {
         const KEY_STATUS_STORAGE = 'naz_key_status_v1';
         const KEY_COOLDOWN_MS = 5 * 60 * 1000;
         const KEY_SOFT_COOLDOWN_MS = 60 * 1000;
-        const aiKeyStatus = {};
+        let aiKeyStatus = {};
         let aiModelChain = [];
         const toolRegistry = new Map();
         const nazGameTimers = new Map();
