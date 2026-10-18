@@ -1632,7 +1632,7 @@ import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebas
                     let lastPercent = 0;
                     xhr.open('POST', api + '/upload');
                     xhr.setRequestHeader('Content-Type', contentType);
-                    xhr.setRequestHeader('X-Chat-User', me.user);
+                    xhr.setRequestHeader('X-Chat-User', encodeURIComponent(me.user));
                     xhr.setRequestHeader('X-Chat-Proof', me.password);
                     xhr.upload.onprogress = event => {
                         if (!event.lengthComputable) return;
@@ -1679,7 +1679,8 @@ import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebas
                 else if (reason === 'storage_capacity_limit') showNotification('وصلت سعة الوسائط المؤقتة؛ جرّب لاحقاً بعد انتهاء صلاحية الملفات القديمة.');
                 else if (reason === 'auth_required') showNotification('جلسة الحساب انتهت؛ سجّل خروج وادخل من جديد.');
                 else if (reason === 'upload_auth_unavailable') showNotification('تعذر التحقق من الحساب؛ حاول بعد شوي.');
-                else showNotification('فشل رفع الملف أو إرساله؛ تحقق من الاتصال وحاول مرة ثانية.');
+                else if (reason === 'network') showNotification('فشل الاتصال بخدمة الرفع؛ تحقق من النت وحاول مرة ثانية.');
+                else showNotification(`فشل رفع الملف أو إرساله${error?.status ? ` (رمز ${error.status})` : ''}؛ حاول مرة ثانية.`);
             } finally {
                 isUploadingMedia = false;
             }

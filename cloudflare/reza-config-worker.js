@@ -358,9 +358,10 @@ export default {
 
         if (path === '/upload' && request.method === 'POST') {
             if (!env.IMAGES) return json({ ok: false, error: 'storage_unavailable' }, 503, origin);
-            const user = String(request.headers.get('X-Chat-User') || '').toLowerCase();
+            let user = String(request.headers.get('X-Chat-User') || '').toLowerCase();
+            try { user = decodeURIComponent(user); } catch {}
             const proof = String(request.headers.get('X-Chat-Proof') || '').toLowerCase();
-            if (!/^[a-z0-9_-]{1,32}$/.test(user) || !/^[a-f0-9]{64}$/.test(proof)) {
+            if (!user || !/^[a-f0-9]{64}$/.test(proof)) {
                 return json({ ok: false, error: 'auth_required' }, 401, origin);
             }
             try {
