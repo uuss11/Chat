@@ -3282,8 +3282,55 @@ import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebas
         window.closeStatsModal = (e) => { if (e.target === document.getElementById('modal-stats')) document.getElementById('modal-stats').style.display = 'none'; };
         window.closeForwardModal = (e) => { if (e.target === document.getElementById('modal-forward')) document.getElementById('modal-forward').style.display = 'none'; };
 
-        document.getElementById('msg-input').addEventListener('keydown', (e) => {
+        const messageInput = document.getElementById('msg-input');
+        const mentionSuggestions = document.getElementById('mention-suggestions');
+        const imageMentionSuggestion = mentionSuggestions?.querySelector('[data-mention-value="@انشاء صور"]');
+        const updateMentionSuggestions = () => {
+            if (!messageInput || !mentionSuggestions) return;
+            const cursor = messageInput.selectionStart ?? messageInput.value.length;
+            const beforeCursor = messageInput.value.slice(0, cursor);
+            const hasMentionDraft = /(^|\s)@[^\s@]*$/u.test(beforeCursor);
+            mentionSuggestions.hidden = !hasMentionDraft;
+            messageInput.setAttribute('aria-expanded', String(hasMentionDraft));
+            if (hasMentionDraft) imageMentionSuggestion?.setAttribute('aria-selected', 'false');
+        };
+        const insertImageMention = () => {
+            if (!messageInput || !imageMentionSuggestion) return;
+            const cursor = messageInput.selectionStart ?? messageInput.value.length;
+            const beforeCursor = messageInput.value.slice(0, cursor);
+            const match = /(^|\s)@[^\s@]*$/u.exec(beforeCursor);
+            if (!match) return;
+            const tokenStart = match.index + match[1].length;
+            const mention = '@انشاء صور ';
+            const nextValue = beforeCursor.slice(0, tokenStart) + mention + messageInput.value.slice(messageInput.selectionEnd ?? cursor);
+            messageInput.value = nextValue;
+            const nextCursor = tokenStart + mention.length;
+            messageInput.setSelectionRange(nextCursor, nextCursor);
+            mentionSuggestions.hidden = true;
+            messageInput.setAttribute('aria-expanded', 'false');
+            messageInput.focus();
+            messageInput.dispatchEvent(new Event('input', { bubbles: true }));
+        };
+        imageMentionSuggestion?.addEventListener('pointerdown', event => event.preventDefault());
+        imageMentionSuggestion?.addEventListener('click', insertImageMention);
+        messageInput?.addEventListener('input', updateMentionSuggestions);
+        messageInput?.addEventListener('keydown', (e) => {
+            if (e.key === 'ArrowDown' && mentionSuggestions && !mentionSuggestions.hidden) {
+                e.preventDefault();
+                imageMentionSuggestion?.focus();
+                return;
+            }
+            if (e.key === 'Escape' && mentionSuggestions && !mentionSuggestions.hidden) {
+                mentionSuggestions.hidden = true;
+                messageInput.setAttribute('aria-expanded', 'false');
+                return;
+            }
             if (e.key === 'Enter' && !e.isComposing) {
+                if (mentionSuggestions && !mentionSuggestions.hidden) {
+                    e.preventDefault();
+                    insertImageMention();
+                    return;
+                }
                 e.preventDefault();
                 sendMessage();
             }
