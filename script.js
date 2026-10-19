@@ -1357,6 +1357,22 @@ if (new URLSearchParams(location.search).has('debug')) {
             return false;
         }
 
+        let messageRenderSequence = 0;
+        const chatFlowElement = document.getElementById('chat-flow');
+        const scrollLatestButton = document.getElementById('scroll-latest-btn');
+        function updateScrollLatestButton() {
+            if (!chatFlowElement || !scrollLatestButton) return;
+            const distanceFromLatest = chatFlowElement.scrollHeight - chatFlowElement.clientHeight - chatFlowElement.scrollTop;
+            const visible = distanceFromLatest > 120;
+            scrollLatestButton.classList.toggle('is-visible', visible);
+            scrollLatestButton.setAttribute('aria-hidden', String(!visible));
+        }
+        chatFlowElement?.addEventListener('scroll', updateScrollLatestButton, { passive: true });
+        scrollLatestButton?.addEventListener('click', () => {
+            chatFlowElement?.scrollTo({ top: chatFlowElement.scrollHeight, behavior: 'smooth' });
+        });
+        window.addEventListener('resize', updateScrollLatestButton);
+
         function startChat() {
             // مراقبة الكتابة
             startTypingListener();
@@ -1373,8 +1389,9 @@ if (new URLSearchParams(location.search).has('debug')) {
             
             // مراقبة الرسائل (آخر 250 رسالة)
             onValue(query(ref(db, 'messages'), limitToLast(250)), async snap => {
+                const renderSequence = ++messageRenderSequence;
                 const flow = document.getElementById('chat-flow');
-                flow.innerHTML = '';
+                const stayAtLatest = flow.scrollHeight - flow.scrollTop - flow.clientHeight <= 120;
                 const liveMessages = new Map();
                 snap.forEach(child => liveMessages.set(child.key, child.val()));
                 const replyPreview = reply => {
@@ -1392,6 +1409,8 @@ if (new URLSearchParams(location.search).has('debug')) {
                     usersSnap = { val: () => ({}) };
                 }
                 const allUsers = usersSnap.val() || {};
+                if (renderSequence !== messageRenderSequence) return;
+                flow.replaceChildren();
 
                 let msgCount = 0, imgCount = 0;
 
@@ -1529,7 +1548,8 @@ if (new URLSearchParams(location.search).has('debug')) {
                         void runToolAction(msgKey, 'custom', { fields: {}, stroke, strokeKey: key });
                     }
                 });
-                flow.scrollTop = flow.scrollHeight;
+                if (stayAtLatest) flow.scrollTop = flow.scrollHeight;
+                requestAnimationFrame(updateScrollLatestButton);
             }, (error) => {
                 console.error('Messages listener error:', error);
             });
@@ -1652,14 +1672,23 @@ if (new URLSearchParams(location.search).has('debug')) {
             return date.toLocaleTimeString('ar-SA', { hour: '2-digit', minute: '2-digit' });
         }
 
+        let isSendingMessage = false;
         window.sendMessage = async () => {
-            const txt = document.getElementById('msg-input').value.trim();
+            const input = document.getElementById('msg-input');
+            const txt = input.value.trim();
             if(!txt) return;
+            if (!me || !db || !isFirebaseReady) {
+                showNotification('الدردشة غير متصلة حالياً؛ انتظر اكتمال الاتصال ثم أعد الإرسال.');
+                return;
+            }
+            if (isSendingMessage) return;
             if (txt.length > 2000) {
                 showNotification('الرسالة طويلة جداً؛ الحد الأقصى 2000 حرف.');
                 return;
             }
-            
+            isSendingMessage = true;
+            const sendButton = document.querySelector('.send-btn');
+            if (sendButton) sendButton.disabled = true;
             try {
                 if(isEdit) {
                     await update(ref(db, `messages/${activeMsg.id}`), { txt, edited: true, editedAt: serverTimestamp() });
@@ -1677,12 +1706,22 @@ if (new URLSearchParams(location.search).has('debug')) {
                     if(replyData) msgData.reply = replyData;
                     await push(ref(db, 'messages'), msgData);
                 }
-                document.getElementById('msg-input').value = '';
+                if (input.value.trim() === txt) input.value = '';
                 cancelReply();
                 // مسح حالة الكتابة
                 remove(ref(db, `typing/${me.user}`)).catch(() => {});
             } catch (error) {
-                showNotification('❌ فشل في إرسال الرسالة');
+                console.error('Message send failed:', error);
+                const code = String(error?.code || '').toLowerCase();
+                const detail = code.includes('permission')
+                    ? 'ما عندك صلاحية إرسال الرسائل.'
+                    : /network|unavailable|disconnected/.test(code)
+                        ? 'الاتصال بقاعدة البيانات انقطع؛ النص بقي بالحقل.'
+                        : 'تعذر الإرسال؛ النص بقي بالحقل، جرّب مرة ثانية.';
+                showNotification(`❌ ${detail}`);
+            } finally {
+                isSendingMessage = false;
+                if (sendButton) sendButton.disabled = false;
             }
         };
 
