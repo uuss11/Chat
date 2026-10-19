@@ -13,6 +13,20 @@ const clampNumber = (value, min, max, fallback) => {
 
 const cleanText = (value, maxLength) => String(value ?? '').replace(/\s+/g, ' ').trim().slice(0, maxLength);
 
+const normalizeGameBoard = (value, length) => {
+    const board = Array(length).fill(null);
+    const entries = Array.isArray(value)
+        ? value.map((mark, index) => [index, mark])
+        : value && typeof value === 'object' ? Object.entries(value) : [];
+    for (const [rawIndex, mark] of entries) {
+        const index = Number(rawIndex);
+        if (Number.isInteger(index) && index >= 0 && index < length && (mark === 'X' || mark === 'O')) {
+            board[index] = mark;
+        }
+    }
+    return board;
+};
+
 const formatValue = value => {
     if (Array.isArray(value)) return value.join('، ');
     if (typeof value === 'boolean') return value ? 'مفعّل' : 'مطفأ';
@@ -519,7 +533,7 @@ export const TOOL_KINDS = {
         state: () => ({ board: Array(9).fill(null), turn: 'X', winner: null, xPlayer: null, oPlayer: null, xName: 'X', oName: 'O', waitUntil: Date.now() + 15000, scores: { X: 0, O: 0, draw: 0 } }),
         actions: ['join', 'play', 'reset', 'naz-turn'],
         render(config, state, ctx) {
-            const board = Array.isArray(state.board) && state.board.length === 9 ? state.board : Array(9).fill(null);
+            const board = normalizeGameBoard(state.board, 9);
             const winner = state.winner;
             const scores = state.scores || {};
             const isPlayer = ctx.user === state.xPlayer || ctx.user === state.oPlayer;
@@ -545,7 +559,7 @@ export const TOOL_KINDS = {
         state: () => ({ board: Array(42).fill(null), turn: 'X', winner: null, xPlayer: null, oPlayer: null, xName: 'X', oName: 'O', waitUntil: Date.now() + 15000, scores: { X: 0, O: 0, draw: 0 } }),
         actions: ['join', 'play', 'reset', 'naz-turn'],
         render(config, state, ctx) {
-            const board = Array.isArray(state.board) && state.board.length === 42 ? state.board : Array(42).fill(null);
+            const board = normalizeGameBoard(state.board, 42);
             const winner = state.winner;
             const scores = state.scores || {};
             const isPlayer = ctx.user === state.xPlayer || ctx.user === state.oPlayer;
@@ -986,7 +1000,7 @@ export function applyToolAction(kind, config, currentState, action, payload, ctx
     }
 
     if (kind === 'tictactoe') {
-        const board = Array.isArray(state.board) && state.board.length === 9 ? state.board.slice() : Array(9).fill(null);
+        const board = normalizeGameBoard(state.board, 9);
         const scores = { X: Number(state.scores?.X) || 0, O: Number(state.scores?.O) || 0, draw: Number(state.scores?.draw) || 0 };
         if (action === 'join') {
             if (!state.xPlayer) return { ...state, xPlayer: user, xName: name, waitUntil: Date.now() + 15000, scores };
@@ -1032,7 +1046,7 @@ export function applyToolAction(kind, config, currentState, action, payload, ctx
     }
 
     if (kind === 'connect4') {
-        const board = Array.isArray(state.board) && state.board.length === 42 ? state.board.slice() : Array(42).fill(null);
+        const board = normalizeGameBoard(state.board, 42);
         const scores = { X: Number(state.scores?.X) || 0, O: Number(state.scores?.O) || 0, draw: Number(state.scores?.draw) || 0 };
         if (action === 'join') {
             if (!state.xPlayer) return { ...state, xPlayer: user, xName: name, waitUntil: Date.now() + 15000, scores };

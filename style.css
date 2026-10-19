@@ -1008,6 +1008,7 @@ button:focus-visible, [role="button"]:focus-visible, a:focus-visible, input:focu
 .search-toggle-btn svg { display: block; }
 .search-bar { max-height: 0; opacity: 0; overflow: hidden; transform: translateY(-8px); pointer-events: none; border-color: transparent !important; transition: max-height .3s cubic-bezier(.2,.8,.25,1), opacity .22s ease, transform .3s cubic-bezier(.2,.8,.25,1), padding .3s ease, border-color .2s ease; }
 .search-bar.is-open { max-height: 70px; opacity: 1; transform: none; pointer-events: auto; border-color: var(--glass-border) !important; }
+.search-tool .search-bar { max-height: none; opacity: 1; overflow: visible; transform: none; pointer-events: auto; border-color: var(--glass-border) !important; }
 .search-close { background: transparent; border: 0; padding: 4px; display: flex; align-items: center; justify-content: center; cursor: pointer; color: var(--danger); }
 .search-close:hover { opacity: .75; }
 
