@@ -16,7 +16,7 @@ const cleanText = (value, maxLength) => String(value ?? '').replace(/\s+/g, ' ')
 const normalizeGameBoard = (value, length) => {
     const board = Array(length).fill(null);
     const entries = Array.isArray(value)
-        ? value.map((mark, index) => [index, mark])
+        ? Array.from(value, (mark, index) => [index, mark])
         : value && typeof value === 'object' ? Object.entries(value) : [];
     for (const [rawIndex, mark] of entries) {
         const index = Number(rawIndex);
