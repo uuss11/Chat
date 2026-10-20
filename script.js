@@ -596,6 +596,7 @@ if (new URLSearchParams(location.search).has('debug')) {
         const KEY_COOLDOWN_MS = 5 * 60 * 1000;
         const KEY_SOFT_COOLDOWN_MS = 60 * 1000;
         let aiKeyStatus = {};
+        const aiKeyHealth = new Map();
         let aiModelChain = [];
         const toolRegistry = new Map();
         const nazGameTimers = new Map();
@@ -2042,9 +2043,13 @@ if (new URLSearchParams(location.search).has('debug')) {
         };
 
         // --- مجموعة مفاتيح OpenRouter + سلسلة النماذج ---
+        function normalizeOpenRouterKey(key) {
+            return String(key || '').trim().replace(/^Bearer\s+/i, '').replace(/\s+/g, '');
+        }
+
         function hashKeyValue(key) {
             let hash = 2166136261;
-            const str = String(key || '');
+            const str = normalizeOpenRouterKey(key);
             for (let i = 0; i < str.length; i++) hash = Math.imul(hash ^ str.charCodeAt(i), 16777619);
             return (hash >>> 0).toString(36);
         }
@@ -2073,7 +2078,9 @@ if (new URLSearchParams(location.search).has('debug')) {
 
         function markKeyState(key, state, reason, cooldownMs = 0) {
             if (!key) return;
-            aiKeyStatus[hashKeyValue(key)] = { state, reason: reason || '', at: Date.now(), until: cooldownMs ? Date.now() + cooldownMs : 0 };
+            const hash = hashKeyValue(key);
+            aiKeyHealth.delete(hash);
+            aiKeyStatus[hash] = { state, reason: reason || '', at: Date.now(), until: cooldownMs ? Date.now() + cooldownMs : 0 };
             persistKeyStatus();
             updateAiKeysMeta();
             void persistSharedKeyStatus();
@@ -2081,7 +2088,9 @@ if (new URLSearchParams(location.search).has('debug')) {
 
         function resetKeyState(key) {
             if (!key) return;
-            delete aiKeyStatus[hashKeyValue(key)];
+            const hash = hashKeyValue(key);
+            delete aiKeyStatus[hash];
+            aiKeyHealth.delete(hash);
             persistKeyStatus();
             updateAiKeysMeta();
             void persistSharedKeyStatus();
@@ -2098,10 +2107,14 @@ if (new URLSearchParams(location.search).has('debug')) {
 
         function getRuntimeKeys() {
             if (!dbAiConfig) return [];
-            const keys = [];
-            if (Array.isArray(dbAiConfig.apiKeys)) keys.push(...dbAiConfig.apiKeys);
+            const configured = dbAiConfig.apiKeys;
+            const keys = Array.isArray(configured)
+                ? configured.slice()
+                : configured && typeof configured === 'object'
+                    ? Object.keys(configured).filter(key => /^\d+$/.test(key)).sort((a, b) => Number(a) - Number(b)).map(key => configured[key])
+                    : [];
             if (dbAiConfig.apiKey) keys.push(dbAiConfig.apiKey);
-            return [...new Set(keys.map(key => String(key || '').trim()).filter(Boolean))];
+            return [...new Set(keys.map(normalizeOpenRouterKey).filter(Boolean))];
         }
 
         function getAvailableKeys() {
@@ -2142,7 +2155,7 @@ if (new URLSearchParams(location.search).has('debug')) {
                 <span class="ai-key-status" data-state="empty">فارغ</span>
                 <button type="button" class="ai-key-action" data-key-reset title="إعادة تفعيل المفتاح" aria-label="إعادة تفعيل المفتاح"><i class="fas fa-rotate-right"></i></button>
                 <button type="button" class="ai-key-action ai-key-remove" title="حذف المفتاح" aria-label="حذف المفتاح"><i class="fas fa-trash"></i></button>`;
-            row.querySelector('.ai-key-input').value = value;
+            row.querySelector('.ai-key-input').value = normalizeOpenRouterKey(value);
             row.querySelector('.ai-key-input').addEventListener('input', updateAiKeysMeta);
             row.querySelector('[data-key-reset]').addEventListener('click', () => resetKeyState(row.querySelector('.ai-key-input').value.trim()));
             row.querySelector('.ai-key-remove').addEventListener('click', () => { row.remove(); updateAiKeysMeta(); });
@@ -2159,7 +2172,7 @@ if (new URLSearchParams(location.search).has('debug')) {
         }
 
         function collectAiKeyDraft() {
-            return [...document.querySelectorAll('#ai-keys-list .ai-key-input')].map(input => input.value.trim()).filter(Boolean);
+            return [...new Set([...document.querySelectorAll('#ai-keys-list .ai-key-input')].map(input => normalizeOpenRouterKey(input.value)).filter(Boolean))];
         }
 
         function updateAiKeysMeta() {
@@ -2171,18 +2184,91 @@ if (new URLSearchParams(location.search).has('debug')) {
                 const key = row.querySelector('.ai-key-input').value.trim();
                 const badge = row.querySelector('.ai-key-status');
                 if (!key) { badge.dataset.state = 'empty'; badge.textContent = 'فارغ'; return; }
+                const keyHash = hashKeyValue(key);
+                const health = aiKeyHealth.get(keyHash);
+                if (health && Date.now() - health.at < 10 * 60 * 1000) {
+                    if (health.state === 'valid') { badge.dataset.state = 'ready'; badge.textContent = 'صالح'; ready++; return; }
+                    if (health.state === 'invalid') { badge.dataset.state = 'exhausted'; badge.textContent = 'مرفوض'; exhausted++; return; }
+                    if (health.state === 'limited') { badge.dataset.state = 'cooldown'; badge.textContent = 'حد/انتظار'; waiting++; return; }
+                    if (health.state === 'checking') { badge.dataset.state = 'cooldown'; badge.textContent = 'يفحص…'; waiting++; return; }
+                    if (health.state === 'error') { badge.dataset.state = 'cooldown'; badge.textContent = 'تعذّر الفحص'; waiting++; return; }
+                }
                 const state = getKeyState(key).state;
                 if (state === 'ready') { badge.dataset.state = 'ready'; badge.textContent = 'جاهز'; ready++; }
-                else if (state === 'exhausted') { badge.dataset.state = 'exhausted'; badge.textContent = 'منتهي'; exhausted++; }
+                else if (state === 'exhausted') { badge.dataset.state = 'exhausted'; badge.textContent = 'مرفوض'; exhausted++; }
                 else { badge.dataset.state = 'cooldown'; badge.textContent = state === 'soft' ? 'تعذّر مؤقتاً' : 'انتظار'; waiting++; }
             });
             const summary = document.getElementById('ai-keys-summary');
             if (summary) {
                 summary.textContent = !values.length
                     ? 'لا توجد مفاتيح بعد. أضف مفتاحاً واحداً على الأقل.'
-                    : `المجموع: ${values.length} · جاهز: ${ready} · منتهي: ${exhausted}${waiting ? ` · مؤقت: ${waiting}` : ''}`;
+                    : `المجموع: ${values.length} · جاهز/صالح: ${ready} · مرفوض: ${exhausted}${waiting ? ` · مؤقت: ${waiting}` : ''}`;
             }
         }
+
+        window.checkAiKeys = async () => {
+            const keys = collectAiKeyDraft();
+            const button = document.getElementById('check-ai-keys-btn');
+            if (!keys.length) return showNotification('أضف مفاتيح OpenRouter أولاً.');
+            if (button?.disabled) return;
+            if (button) { button.disabled = true; button.dataset.label = button.innerHTML; button.innerHTML = '<i class="fas fa-spinner fa-spin"></i> يفحص…'; }
+            const counts = { valid: 0, invalid: 0, limited: 0, error: 0 };
+            let nextIndex = 0;
+            const inspect = async key => {
+                const hash = hashKeyValue(key);
+                aiKeyHealth.set(hash, { state: 'checking', at: Date.now() });
+                updateAiKeysMeta();
+                const controller = new AbortController();
+                const timeout = setTimeout(() => controller.abort(), 10000);
+                try {
+                    const response = await fetch('https://openrouter.ai/api/v1/key', {
+                        headers: { Authorization: `Bearer ${key}`, Accept: 'application/json' },
+                        cache: 'no-store', signal: controller.signal
+                    });
+                    let payload = {};
+                    try { payload = await response.json(); } catch { /* استجابة غير JSON */ }
+                    const status = Number(payload?.error?.code) || response.status;
+                    const info = payload?.data || {};
+                    const freeRemaining = info.free_model_daily_requests?.remaining;
+                    const freeLimitReached = freeRemaining !== null && freeRemaining !== undefined && Number.isFinite(Number(freeRemaining)) && Number(freeRemaining) <= 0;
+                    if (status === 401) {
+                        aiKeyStatus[hash] = { state: 'exhausted', reason: 'مفتاح غير صالح أو معطل', at: Date.now(), until: 0 };
+                        aiKeyHealth.set(hash, { state: 'invalid', at: Date.now() });
+                        counts.invalid++;
+                    } else if (status === 429 || status === 402 || (response.ok && info.limit_remaining !== null && info.limit_remaining !== undefined && Number.isFinite(Number(info.limit_remaining)) && Number(info.limit_remaining) <= 0) || (response.ok && freeLimitReached)) {
+                        const cooldown = getRetryDelayMs(response);
+                        aiKeyStatus[hash] = { state: 'cooldown', reason: 'حد رصيد أو طلبات OpenRouter', at: Date.now(), until: Date.now() + cooldown };
+                        aiKeyHealth.set(hash, { state: 'limited', at: Date.now() });
+                        counts.limited++;
+                    } else if (response.ok && !payload?.error) {
+                        delete aiKeyStatus[hash];
+                        aiKeyHealth.set(hash, { state: 'valid', at: Date.now() });
+                        counts.valid++;
+                    } else {
+                        aiKeyHealth.set(hash, { state: 'error', at: Date.now() });
+                        counts.error++;
+                    }
+                } catch (error) {
+                    aiKeyHealth.set(hash, { state: 'error', at: Date.now() });
+                    counts.error++;
+                } finally {
+                    clearTimeout(timeout);
+                    updateAiKeysMeta();
+                }
+            };
+            try {
+                const workers = Array.from({ length: Math.min(3, keys.length) }, async () => {
+                    while (nextIndex < keys.length) await inspect(keys[nextIndex++]);
+                });
+                await Promise.all(workers);
+                persistKeyStatus();
+                updateAiKeysMeta();
+                void persistSharedKeyStatus();
+                showNotification(`فحص ${keys.length} مفتاح: صالح ${counts.valid} · مرفوض ${counts.invalid} · حدود ${counts.limited} · تعذّر ${counts.error}`);
+            } finally {
+                if (button) { button.disabled = false; button.innerHTML = button.dataset.label || '<i class="fas fa-stethoscope"></i> فحص المفاتيح'; }
+            }
+        };
 
         function renderAiModelChain() {
             const container = document.getElementById('ai-model-chain');
@@ -2474,6 +2560,14 @@ if (new URLSearchParams(location.search).has('debug')) {
             return { queries, caption };
         }
 
+        function getRetryDelayMs(response, fallback = KEY_COOLDOWN_MS) {
+            const value = response?.headers?.get('Retry-After');
+            if (!value) return fallback;
+            const seconds = Number(value);
+            const delay = Number.isFinite(seconds) ? seconds * 1000 : Date.parse(value) - Date.now();
+            return Number.isFinite(delay) && delay > 0 ? Math.min(Math.max(delay, 1000), 60 * 60 * 1000) : fallback;
+        }
+
         async function requestOpenRouterCompletion(key, model, messages, maxTokens, forceJson) {
             const controller = new AbortController();
             const timeout = setTimeout(() => controller.abort(), 30000);
@@ -2497,12 +2591,35 @@ if (new URLSearchParams(location.search).has('debug')) {
                 const raw = await response.text();
                 let data = null;
                 try { data = JSON.parse(raw); } catch { data = null; }
-                const text = data?.choices?.[0]?.message?.content;
+                const choice = data?.choices?.[0];
+                const errorValue = data?.error || choice?.error || null;
+                const apiError = errorValue && typeof errorValue === 'object'
+                    ? errorValue
+                    : typeof errorValue === 'string' ? { message: errorValue } : null;
+                const hasBodyError = Boolean(apiError) || choice?.finish_reason === 'error';
+                const metadata = apiError?.metadata && typeof apiError.metadata === 'object' ? apiError.metadata : {};
+                const content = choice?.message?.content;
+                const text = typeof content === 'string'
+                    ? content.trim()
+                    : Array.isArray(content)
+                        ? content.map(part => typeof part?.text === 'string' ? part.text : '').join('').trim()
+                        : '';
+                const bodyStatus = Number(apiError?.code || apiError?.status);
+                const status = response.ok && hasBodyError ? (Number.isFinite(bodyStatus) && bodyStatus >= 400 ? bodyStatus : 502) : response.status;
+                const rateLimitHeaders = ['X-RateLimit-Limit', 'X-RateLimit-Remaining', 'X-RateLimit-Reset'].some(name => Boolean(response.headers.get(name)));
                 return {
-                    status: response.status,
-                    ok: response.ok,
-                    text: typeof text === 'string' ? text.trim() : '',
-                    error: typeof data?.error?.message === 'string' ? data.error.message : ''
+                    status,
+                    httpStatus: response.status,
+                    ok: response.ok && !hasBodyError,
+                    text,
+                    error: String(apiError?.message || (hasBodyError ? 'مزود النموذج أنهى الطلب بخطأ' : '') || (response.ok ? '' : raw) || '').slice(0, 500),
+                    errorMeta: metadata,
+                    errorType: String(metadata.error_type || apiError?.error_type || '').toLowerCase(),
+                    providerCode: String(metadata.provider_code || ''),
+                    providerName: String(metadata.provider_name || ''),
+                    limitSource: String(metadata.limit_source || '').toLowerCase(),
+                    retryAfterMs: getRetryDelayMs(response),
+                    rateLimitHeaders
                 };
             } finally {
                 clearTimeout(timeout);
@@ -2511,51 +2628,88 @@ if (new URLSearchParams(location.search).has('debug')) {
 
         async function callOpenRouter(messages, options = {}) {
             const maxTokens = options.maxTokens || 800;
-            if (!getRuntimeKeys().length) throw new Error('لا يوجد مفتاح OpenRouter محفوظ في الإعدادات');
+            const runtimeKeys = getRuntimeKeys();
+            if (!runtimeKeys.length) throw new Error('لا يوجد مفتاح OpenRouter محفوظ في الإعدادات');
+            const availableKeys = getAvailableKeys();
+            if (!availableKeys.length) {
+                const rejected = runtimeKeys.filter(key => getKeyState(key).state === 'exhausted').length;
+                throw new Error(rejected === runtimeKeys.length
+                    ? `كل مفاتيح OpenRouter (${runtimeKeys.length}) مرفوضة أو معطلة؛ افحصها من إعدادات NAZ.`
+                    : 'كل مفاتيح OpenRouter في انتظار مؤقت؛ أعد فحصها من إعدادات NAZ أو انتظر انتهاء الحد.');
+            }
             const models = getModelChain();
             const failures = [];
+            const unavailableKeys = new Set();
             for (const model of models) {
-                const usableKeys = getAvailableKeys();
-                if (!usableKeys.length) break;
-                for (const key of usableKeys) {
+                for (const key of availableKeys) {
+                    if (unavailableKeys.has(key) || getKeyState(key).state === 'exhausted') continue;
                     try {
                         const result = await requestOpenRouterCompletion(key, model, messages, maxTokens, Boolean(options.json));
                         if (result.ok && result.text) return { text: result.text, model };
-                        if (result.ok && !result.text) { failures.push(`${model}: رد فارغ`); break; }
-                        if (result.status === 401 || result.status === 403) {
-                            markKeyState(key, 'exhausted', `مفتاح مرفوض (${result.status})`);
-                            failures.push(`${model}: مفتاح مرفوض`);
+                        if (result.ok && !result.text) { failures.push(`${model}: رد فارغ؛ أجرب نموذجاً احتياطياً`); break; }
+                        const source = result.limitSource;
+                        const message = String(result.error || '').toLowerCase();
+                        if (result.status === 401) {
+                            markKeyState(key, 'exhausted', 'مفتاح غير صالح أو معطل');
+                            unavailableKeys.add(key);
+                            failures.push(`${model}: هذا المفتاح مرفوض (401)، أجرب المفتاح التالي`);
                             continue;
                         }
                         if (result.status === 402) {
-                            markKeyState(key, 'exhausted', 'رصيد المفتاح منتهي');
-                            failures.push(`${model}: رصيد منتهي`);
+                            const delay = result.retryAfterMs || KEY_COOLDOWN_MS;
+                            markKeyState(key, 'cooldown', source === 'openrouter_in_flight_budget' ? 'ميزانية طلبات مؤقتة' : 'رصيد أو حد إنفاق', delay);
+                            unavailableKeys.add(key);
+                            failures.push(source === 'openrouter_in_flight_budget'
+                                ? `${model}: حد الطلبات المتزامنة؛ أجرّب مفاتيح أخرى`
+                                : `${model}: رصيد أو حد إنفاق غير كافٍ؛ أجرّب مفاتيح أخرى`);
+                            continue;
+                        }
+                        if (result.status === 403) {
+                            if (source === 'openrouter_key_limit') {
+                                const resetAt = Date.parse(String(result.errorMeta?.resets_at || ''));
+                                const delay = Number.isFinite(resetAt) && resetAt > Date.now() ? Math.min(resetAt - Date.now(), 24 * 60 * 60 * 1000) : result.retryAfterMs;
+                                markKeyState(key, 'cooldown', 'حد إنفاق المفتاح', delay);
+                                unavailableKeys.add(key);
+                                failures.push(`${model}: حد إنفاق هذا المفتاح مستنفد`);
+                                continue;
+                            }
+                            if (/guardrail|moderation|content_policy/.test(result.errorType) || /openrouter_(workspace|guardrail)_budget/.test(source)) {
+                                failures.push(`${model}: منع أو حد على مستوى الحساب، وليس مفتاحاً منتهياً`);
+                                break;
+                            }
+                            failures.push(`${model}: رفض صلاحية (403)، لا أعلّم المفتاح منتهياً`);
                             continue;
                         }
                         if (result.status === 429) {
-                            markKeyState(key, 'cooldown', 'ضغط مؤقت على المفتاح', KEY_COOLDOWN_MS);
-                            failures.push(`${model}: ضغط مؤقت (429)`);
-                            continue;
+                            if (result.providerCode || result.providerName || /provider|upstream/.test(result.errorType)) {
+                                failures.push(`${model}: المزود مزدحم؛ أنتقل إلى نموذج احتياطي من دون تعطيل المفتاح`);
+                                break;
+                            }
+                            const platformLimited = result.rateLimitHeaders || /free[\s_-]*model|daily requests|per.minute|ddos/.test(message) || /free_model|rate_limit/.test(source);
+                            if (platformLimited) {
+                                markKeyState(key, 'cooldown', 'حد معدل OpenRouter', result.retryAfterMs || KEY_COOLDOWN_MS);
+                                unavailableKeys.add(key);
+                                failures.push(`${model}: حد معدل OpenRouter؛ أجرب مفتاحاً آخر`);
+                                continue;
+                            }
+                            failures.push(`${model}: زحمة/تحديد معدل من المزود؛ أنتقل إلى نموذج احتياطي من دون تعطيل المفتاح`);
+                            break;
                         }
                         failures.push(`${model}: ${result.status}${result.error ? ' ' + result.error : ''}`);
                         break;
                     } catch (error) {
                         if (error.name === 'AbortError') {
-                            failures.push(`${model}: انتهت المهلة`);
-                            markKeyState(key, 'soft', 'مهلة الاتصال', KEY_SOFT_COOLDOWN_MS);
+                            failures.push(`${model}: انتهت المهلة؛ أنتقل إلى نموذج احتياطي من دون تعطيل المفتاح`);
+                            break;
                         } else {
-                            failures.push(`${model}: تعذّر الاتصال`);
-                            markKeyState(key, 'soft', 'خطأ شبكة', KEY_SOFT_COOLDOWN_MS);
+                            throw new Error(`تعذّر الاتصال بـ OpenRouter؛ لم أعلّم أي مفتاح منتهياً. ${String(error?.message || '').slice(0, 120)}`);
                         }
-                        continue;
                     }
                 }
             }
-            if (!failures.length) {
-                const summary = keyStatusSummary();
-                throw new Error(summary.total ? 'كل المفاتيح غير متاحة حالياً (منتهية أو في انتظار)' : 'لا يوجد مفتاح OpenRouter محفوظ في الإعدادات');
-            }
-            throw new Error(failures.slice(-4).join(' | '));
+            const rejected = runtimeKeys.filter(key => getKeyState(key).state === 'exhausted').length;
+            if (rejected === runtimeKeys.length) throw new Error(`كل مفاتيح OpenRouter (${runtimeKeys.length}) رُفضت بـ401؛ استخدم فحص المفاتيح لمعرفة الصالح منها.`);
+            throw new Error(failures.slice(-5).join(' | ') || 'تعذر الوصول إلى نموذج متاح؛ أعد المحاولة بعد قليل.');
         }
 
         // --- إعدادات الذكاء الاصطناعي ---
@@ -2955,8 +3109,21 @@ if (new URLSearchParams(location.search).has('debug')) {
         }
 
         async function triggerAiResponse(messageKey, userMessage, userName, speakerId) {
-            if (!dbAiConfig || !dbAiConfig.apiKey) {
+            if (!dbAiConfig) {
                 console.error('❌ AI config not available, cannot respond');
+                return;
+            }
+            if (!getRuntimeKeys().length) {
+                const aiName = dbAiConfig.name || 'NAZ Ai';
+                const aiAvatar = dbAiConfig.avatar || getDefaultAvatarUrl('NAZ');
+                try {
+                    await push(ref(db, 'messages'), {
+                        uid: 'naz_ai', name: aiName,
+                        txt: 'ماكو مفتاح OpenRouter محفوظ حتى أرد. خلي المالك يضيف مفتاح من إعدادات NAZ.',
+                        time: serverTimestamp(), avatar: aiAvatar,
+                        reply: { name: String(userName || 'صديق').slice(0, 60), txt: String(userMessage || '').slice(0, 120) }
+                    });
+                } catch (error) { console.warn('Could not post missing-key notice:', error?.message || error); }
                 return;
             }
             
@@ -2986,7 +3153,18 @@ if (new URLSearchParams(location.search).has('debug')) {
             const keySummary = keyStatusSummary();
 
             if (!keySummary.ready) {
-                showNotification(keySummary.total ? '⚠️ كل مفاتيح OpenRouter منتهية أو في انتظار' : '⚠️ لا يوجد مفتاح OpenRouter محفوظ');
+                const allRejected = keySummary.total > 0 && keySummary.exhausted === keySummary.total;
+                const notice = allRejected
+                    ? `كل مفاتيح OpenRouter (${keySummary.total}) مرفوضة أو معطلة. افتح إعدادات NAZ واضغط «فحص المفاتيح».`
+                    : `مفاتيح OpenRouter كلها بانتظار انتهاء حد مؤقت. افتح إعدادات NAZ واضغط «فحص المفاتيح» أو أعد المحاولة لاحقاً.`;
+                try {
+                    await push(ref(db, 'messages'), {
+                        uid: 'naz_ai', name: aiName, txt: notice,
+                        time: serverTimestamp(), avatar: aiAvatar,
+                        reply: { name: safeUserName, txt: safeUserMessage.slice(0, 120) }
+                    });
+                } catch (error) { console.warn('Could not post key-status notice:', error?.message || error); }
+                showNotification(allRejected ? '⚠️ مفاتيح NAZ مرفوضة؛ افحصها من الإعدادات' : '⚠️ مفاتيح NAZ بانتظار حد مؤقت');
                 return;
             }
             
@@ -3386,7 +3564,21 @@ ${memoryContext ? `ذاكرة المحادثة: استخدمي منها فقط �
                 console.log('✅ AI response sent successfully with model:', completion.model);
             } catch (error) {
                 console.error('NAZ reply failed:', error);
-                showNotification(`❌ تعذّر رد ناز: ${String(error.message).slice(0, 80)}`);
+                const detail = String(error?.message || 'خطأ غير معروف');
+                let notice = 'ناز ما كدرت ترد هالمرة. جرّب مرة ثانية بعد قليل.';
+                if (/401|مرفوضة|مرفوض بـ401|غير صالح|معطل/i.test(detail)) notice = 'مفاتيح OpenRouter مرفوضة أو معطّلة. افتح إعدادات NAZ واضغط «فحص المفاتيح»؛ المفاتيح المرفوضة وحدها تُستبعد.';
+                else if (/429|زحمة|تحديد معدل|rate limit/i.test(detail)) notice = 'النموذج أو مزوده مزدحم أو وصل حد الطلبات. ناز جرّبت النماذج الاحتياطية؛ جرّب بعد انتهاء الحد.';
+                else if (/402|رصيد|حد إنفاق|credits|budget/i.test(detail)) notice = 'رصيد OpenRouter أو حد الإنفاق غير كافٍ لهذا المفتاح. فحص المفاتيح يوضح أي مفتاح ما زال صالحاً.';
+                else if (/403|صلاحية|منع|guardrail|moderation/i.test(detail)) notice = 'OpenRouter رفض الطلب بسبب صلاحية أو سياسة/حد حساب، مو لأن المفتاح منتهي.';
+                else if (/مهلة|timeout|انتهت المهلة/i.test(detail)) notice = 'النموذج تأخر بالرد؛ ناز جرّبت نموذجاً احتياطياً. أعد المحاولة بعد قليل.';
+                try {
+                    await push(ref(db, 'messages'), {
+                        uid: 'naz_ai', name: aiName, txt: notice,
+                        time: serverTimestamp(), avatar: aiAvatar,
+                        reply: { name: safeUserName, txt: safeUserMessage.slice(0, 120) }
+                    });
+                } catch (postError) { console.warn('Could not post NAZ failure notice:', postError?.message || postError); }
+                showNotification(`❌ ${notice.slice(0, 100)}`);
             }
         }
 
