@@ -35,10 +35,10 @@ const formatValue = value => {
 
 const CUSTOM_CONTROL_TYPES = ['display', 'progress', 'button', 'slider', 'toggle', 'input', 'note', 'list', 'timer', 'visual'];
 const CUSTOM_OP_TYPES = ['add', 'sub', 'set', 'toggle', 'clear', 'pop', 'push', 'random', 'reset'];
-export const VISUAL_PRESETS = ['heart', 'confetti', 'stars', 'drawing'];
+export const VISUAL_PRESETS = ['heart', 'heart-rain', 'confetti', 'stars', 'drawing'];
 
 const requestVerb = /(ارسل|أرسل|ابعث|ابعت|هات|جيب|جيبلي|وريني|ورّيني|دور|دوّر|ابحث|لقي|لاقي|احتاج|محتاج|اريد|أريد|ابغى|أبغى|سوي|سوّي|سويلي|اعمل|اعملي|اعمللي|اصنع|صمم|ابني|ركب|search|find|send|show|need|want|give)/iu;
-const interactiveWords = /(تفاعلي|تفاعلية|قلب|لعبة|لعبه|game|انيميشن|متحرك|متغيرة|تفاعليه)/iu;
+const interactiveWords = /(تفاعلي|تفاعلية|قلب|قلوب|لعبة|لعبه|game|انميشن|انيميشن|انيميشن|انيمي|animation|floating|متحرك|متطاير|تطاير|طائر|متغيرة|تفاعليه)/iu;
 const toolWords = /(أداة|اداة|آلة|الة|widget|أداة تفاعلية|أدوات)/iu;
 const toolKindWords = /(حاسبة|حاسبه|عدّاد|عداد|مؤقت|مؤقّت|تايمر|تصويت|استفتاء|قائمة|تشيك ليست|مهام|ملاحظات|نوت|نرد|زهر|قرعة|محوّل|محول|تحويل وحدات|إكس|اكس او|تيك تاك تو|x-o|لعبة|لوحة|سكور|نقاط|ميزانية|حضور|عجلة|رسمة|رسم|دفتر|تذكرة|جدول)/iu;
 const audioWords = /(اغنية|أغنية|اغنيه|أغنيه|موسيق|مقطوعة|مقطوعه|نغمة|نغمه|صوتيات|مقطع صوتي|تسجيل صوتي|بودكاست|podcast|song|music|audio|mp3|ogg|wav)/iu;
@@ -638,7 +638,10 @@ export const TOOL_KINDS = {
                         parts.push(`<div class="tool-canvas-wrap"><canvas class="tool-canvas" data-tool-canvas data-tool-key="${esc(control.key)}" width="520" height="300"></canvas><div class="tool-row tool-row-end"><span class="tool-status">${esc(control.label)} · انقر واسحب للرسم</span><button type="button" class="tool-key tool-key-warn" data-tool-action="custom" data-tool-value="${index}" data-tool-mode="canvas-clear">مسح</button></div></div>`);
                     } else {
                         const emoji = preset === 'stars' ? '⭐' : preset === 'confetti' ? '🎉' : '💗';
-                        parts.push(`<div class="tool-visual" data-tool-preset="${preset}"><button type="button" class="tool-visual-target" data-tool-action="custom" data-tool-value="${index}" data-tool-mode="visual-tap" aria-label="${esc(control.label)}"><span class="tool-visual-emoji">${emoji}</span><span class="tool-visual-hint">${esc(control.label)}</span></button><div class="tool-visual-count">${clampNumber(value, 0, 1e6, 0)}</div></div>`);
+                        const heartRain = preset === 'heart-rain'
+                            ? `<div class="tool-heart-rain" aria-hidden="true">${Array.from({ length: 10 }, (_, particle) => `<span class="tool-heart-particle p${particle + 1}">${particle % 3 === 0 ? '💖' : particle % 3 === 1 ? '💗' : '💕'}</span>`).join('')}</div>`
+                            : '';
+                        parts.push(`<div class="tool-visual ${preset === 'heart-rain' ? 'tool-visual-rain' : ''}" data-tool-preset="${preset}">${heartRain}<button type="button" class="tool-visual-target" data-tool-action="custom" data-tool-value="${index}" data-tool-mode="visual-tap" aria-label="${esc(control.label)}"><span class="tool-visual-emoji">${emoji}</span><span class="tool-visual-hint">${esc(control.label)}</span></button><div class="tool-visual-count">${clampNumber(value, 0, 1e6, 0)}</div></div>`);
                     }
                 }
             });
@@ -779,6 +782,9 @@ export function normalizeToolSpec(spec) {
 export function isToolRequest(text) {
     const value = String(text || '');
     if (!value) return false;
+    const floatingHeartAnimation = /(انميشن|انيميشن|animation|floating)/iu.test(value)
+        && /(قلب|قلوب|heart)/iu.test(value);
+    if (floatingHeartAnimation) return true;
     const toolWords = /(أداة|اداة|آلة|الة|widget|أداة تفاعلية|أدوات)/iu;
     const buildWords = /(سوي|سوّي|اعمل|إعمل|اعملي|اصنع|صمم|صمّمي|انشئ|أنشئ|ضيف|أضف|اريد|أريد|محتاج|ابغى|أبغى|خلّي|خلي|قدم|قدّم|ركب|سوولي|سويلي|اعمليلي|ابني)/iu;
     const kinds = /(حاسبة|حاسبه|آلة حاسبة|عدّاد|عداد|مؤقت|مؤقّت|تايمر|تصويت|استفتاء|قائمة|تشيك ليست|مهام|ملاحظات|نوت|نرد|زهر|قرعة|محوّل|محول|تحويل وحدات|إكس|اكس او|تيك تاك تو|x-o|لعبة|محرك\s*(?:بحث|البحث)|بحث\s+(?:صور|ويب|الويب|عادي)|search\s+(?:engine|widget)|connect\s*[- ]?4|connect\s*[- ]?four|four in a row|أربع على التوالي|اربع على التوالي)/iu;

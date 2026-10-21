@@ -1093,3 +1093,27 @@ button:focus-visible, [role="button"]:focus-visible, a:focus-visible, input:focu
   .theme-picker-tile { padding: 7px; }
   .theme-picker-swatch { width: 30px; height: 30px; flex-basis: 30px; }
 }
+
+
+/* ===== معاينة أنميشن القلوب داخل بطاقة NAZ التفاعلية ===== */
+.tool-visual { position: relative; display: flex; align-items: center; justify-content: center; gap: 12px; min-height: 82px; }
+.tool-visual-target { display: inline-flex; flex-direction: column; align-items: center; justify-content: center; gap: 5px; min-width: 96px; min-height: 72px; padding: 10px 16px; border: 1px solid rgba(255, 126, 174, .28); border-radius: 16px; background: rgba(236, 72, 153, .10); color: inherit; cursor: pointer; }
+.tool-visual-emoji { font-size: 2rem; line-height: 1; }
+.tool-visual-hint { font-size: .76rem; opacity: .82; }
+.tool-visual-count { min-width: 30px; color: #ff91bd; font-weight: 800; text-align: center; }
+.tool-visual-rain { position: relative; min-height: 190px; overflow: hidden; isolation: isolate; border: 1px solid rgba(255, 126, 174, .24); border-radius: 18px; background: radial-gradient(ellipse at 50% 110%, rgba(236, 72, 153, .2), transparent 65%), linear-gradient(145deg, rgba(48, 20, 41, .42), rgba(20, 24, 34, .45)); }
+.tool-visual-rain .tool-visual-target { position: relative; z-index: 2; width: 100%; min-height: 190px; border: 0; background: transparent; }
+.tool-heart-rain { position: absolute; z-index: 1; inset: 0; overflow: hidden; pointer-events: none; }
+.tool-heart-particle { position: absolute; bottom: -42px; left: var(--heart-x); font-size: var(--heart-size); line-height: 1; opacity: 0; filter: drop-shadow(0 4px 9px rgba(255, 53, 128, .35)); animation: nazHeartFloat var(--heart-duration) ease-in infinite; animation-delay: var(--heart-delay); }
+.tool-heart-particle.p1 { --heart-x: 8%; --heart-size: 23px; --heart-duration: 5.2s; --heart-delay: -.8s; }
+.tool-heart-particle.p2 { --heart-x: 19%; --heart-size: 17px; --heart-duration: 6.4s; --heart-delay: -3.5s; }
+.tool-heart-particle.p3 { --heart-x: 31%; --heart-size: 26px; --heart-duration: 5.8s; --heart-delay: -1.4s; }
+.tool-heart-particle.p4 { --heart-x: 43%; --heart-size: 19px; --heart-duration: 7s; --heart-delay: -4.8s; }
+.tool-heart-particle.p5 { --heart-x: 54%; --heart-size: 25px; --heart-duration: 5.6s; --heart-delay: -2.7s; }
+.tool-heart-particle.p6 { --heart-x: 65%; --heart-size: 16px; --heart-duration: 6.8s; --heart-delay: -1.1s; }
+.tool-heart-particle.p7 { --heart-x: 74%; --heart-size: 22px; --heart-duration: 5.9s; --heart-delay: -3.9s; }
+.tool-heart-particle.p8 { --heart-x: 83%; --heart-size: 18px; --heart-duration: 6.2s; --heart-delay: -2.1s; }
+.tool-heart-particle.p9 { --heart-x: 91%; --heart-size: 24px; --heart-duration: 7.2s; --heart-delay: -5.5s; }
+.tool-heart-particle.p10 { --heart-x: 48%; --heart-size: 14px; --heart-duration: 5.4s; --heart-delay: -4.1s; }
+@keyframes nazHeartFloat { 0% { transform: translate3d(0, 0, 0) rotate(-12deg) scale(.72); opacity: 0; } 12% { opacity: .95; } 55% { transform: translate3d(20px, -112px, 0) rotate(13deg) scale(1); opacity: .9; } 100% { transform: translate3d(-16px, -230px, 0) rotate(-8deg) scale(.8); opacity: 0; } }
+@media (prefers-reduced-motion: reduce) { .tool-heart-particle { animation-duration: 12s; } }

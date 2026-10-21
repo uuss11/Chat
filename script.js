@@ -6,7 +6,7 @@ if (new URLSearchParams(location.search).has('debug')) {
 }
         import { getAnalytics } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-analytics.js";
         import { getDatabase, ref, set, get, push, onValue, query, limitToLast, remove, update, runTransaction, serverTimestamp, onDisconnect } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-database.js";
-        import { TOOL_KINDS, renderToolCard, applyToolAction, parseToolResponse, isToolRequest, buildToolPrompt, isImageRequest, buildImageQueryPrompt, detectRequestKind, buildMediaQueryPrompt, parseMediaPlan, wantsMultipleResults, buildFilePrompt, parseFileResponse, mountToolTimers, clearToolTimers, mountToolCanvases, clearToolCanvases } from './naz-tools.js?v=38';
+        import { TOOL_KINDS, renderToolCard, applyToolAction, parseToolResponse, isToolRequest, buildToolPrompt, isImageRequest, buildImageQueryPrompt, detectRequestKind, buildMediaQueryPrompt, parseMediaPlan, wantsMultipleResults, buildFilePrompt, parseFileResponse, mountToolTimers, clearToolTimers, mountToolCanvases, clearToolCanvases } from './naz-tools.js?v=39';
 
         // ============================================
         // 🔐 Security Utilities
@@ -180,7 +180,7 @@ if (new URLSearchParams(location.search).has('debug')) {
         const DRAW_WEAK = /(انشاء|إنشاء|انشئ|أنشئ|انشأ|انشاءلي|اصنع|صمم|صممي|اعمل|سوي|سوّي|ولّد|ولد|gen\w*|creat\w*|mak\w*)/iu;
         const DRAW_NOUN = /(صور[ةه]|صور|رسم[ةه]|رسم|شكل|شعار|تصميم|خلفية|بوستر|ملصق|لوقو|اي?قونة|أيقونة|logo|image|img|picture|photo|art|wallpaper|poster|banner|cover|sticker|avatar|icon)/iu;
         const DRAW_MENTION = /(@|^|\s)(انشاء\s?صور|انشئ\s?صور|إنشاء\s?صور|@صور|@رسم|@ارسم|@paint|@draw)(?:$|[\s،,.!؟:"')\]]|\s)/iu;
-        const DRAW_DROP = ['ناز', 'naz', 'انشاء', 'إنشاء', 'انشئ', 'أنشئ', 'انشأ', 'اصنع', 'صمم', 'صممي', 'اعمل', 'سوي', 'سوّي', 'ولّد', 'صورة', 'صوره', 'صور', 'لي', 'لّي', 'لنا', 'النا', 'ه', 'ها', 'صورتين', 'صورتان', 'ثلاث', 'اربع', 'أربع', 'واحدة', '1', '2', '3', '4', '١', '٢', '٣', '٤', 'generate', 'create', 'make', 'draw', 'imagine', 'paint', 'sketch', 'image', 'img', 'picture', 'photo', 'a', 'an', 'the', 'me', 'please'];
+        const DRAW_DROP = ['ناز', 'naz', 'انشاء', 'إنشاء', 'انشئ', 'أنشئ', 'انشأ', 'اصنع', 'صمم', 'صممي', 'اعمل', 'سوي', 'سوّي', 'ولّد', 'صورة', 'صوره', 'صور', 'لي', 'لّي', 'لنا', 'النا', 'ه', 'ها', 'صورتين', 'صورتان', 'نتيجة', 'نتائج', 'نتايج', 'result', 'results', 'ثلاث', 'ثلاثة', 'اربع', 'أربع', 'خمسة', 'خمسه', 'ستة', 'سته', 'سبعة', 'سبعه', 'ثمانية', 'ثمانيه', 'تسعة', 'تسعه', 'عشرة', 'عشر', 'واحدة', 'واحد', '1', '2', '3', '4', '5', '6', '7', '8', '9', '10', '١', '٢', '٣', '٤', '٥', '٦', '٧', '٨', '٩', '١٠', 'generate', 'create', 'make', 'draw', 'imagine', 'paint', 'sketch', 'image', 'img', 'picture', 'photo', 'a', 'an', 'the', 'me', 'please'];
         const DRAW_PREFIX = ['ارسملنا', 'ارسمللي', 'ارسمني', 'ارسمي', 'ارسم', 'رسم', 'تخيّل', 'تخيل', 'انشئلي', 'انشئي', 'انشئ', 'إنشاء', 'انشاء', 'اصنع', 'صمملي', 'صممي', 'صمم', 'سويلي', 'سوّي', 'سوي', 'اعملي', 'اعمل', 'ولّدلي', 'ولّد', 'صورلي', 'جيبلي'];
 
         function stripDrawTokens(value) {
@@ -208,16 +208,23 @@ if (new URLSearchParams(location.search).has('debug')) {
             const weak = DRAW_WEAK.test(value) && DRAW_NOUN.test(value);
             const mention = DRAW_MENTION.test(value);
             if (!strong && !weak && !mention) return null;
-            const prompt = stripDrawTokens(value).slice(0, 300);
-            const countMatch = value.match(/(صورتين|صورتان|2 صور|٢ صور|3 صور|٣ صور|ثلاث صور|4 صور|٤ صور|اربع صور|أربع صور)/u);
+            const countWords = { صورتين: 2, صورتان: 2, اثنين: 2, اثنتين: 2, ثلاث: 3, ثلاثة: 3, ثلاثه: 3, اربع: 4, أربع: 4, اربعة: 4, أربعة: 4, اربعه: 4, خمسة: 5, خمسه: 5, خمس: 5, ستة: 6, سته: 6, ست: 6, سبعة: 7, سبعه: 7, سبع: 7, ثمانية: 8, ثمانيه: 8, ثمان: 8, تسعة: 9, تسعه: 9, تسع: 9, عشرة: 10, عشر: 10 };
+            const countMatch = value.match(/(?:^|[\s،,])([0-9٠-٩]{1,2}|صورتين|صورتان|اثنين|اثنتين|ثلاث|ثلاثة|ثلاثه|اربع|أربع|اربعة|أربعة|اربعه|خمسة|خمسه|خمس|ستة|سته|ست|سبعة|سبعه|سبع|ثمانية|ثمانيه|ثمان|تسعة|تسعه|تسع|عشرة|عشر)\s*(?:نتائج?|نتايج|صور?|صورة|مرات)?/iu);
             let count = 1;
-            if (countMatch) count = /(صورتين|صورتان|2|٢)/u.test(countMatch[0]) ? 2 : (/ثلاث|3|٣/.test(countMatch[0]) ? 3 : 4);
+            if (countMatch) {
+                const rawCount = countMatch[1];
+                const normalizedDigits = rawCount.replace(/[٠-٩]/g, digit => String('٠١٢٣٤٥٦٧٨٩'.indexOf(digit)));
+                count = Number.isFinite(Number(normalizedDigits)) ? Number(normalizedDigits) : (countWords[rawCount.toLowerCase()] || 1);
+                count = Math.max(1, Math.min(10, count));
+            }
+            const promptSource = countMatch ? value.replace(countMatch[0], ' ') : value;
+            const prompt = stripDrawTokens(promptSource).slice(0, 300);
             return { prompt: prompt, count: count, raw: value.slice(0, 200) };
         }
 
         function renderImageGenCard(m) {
             const pending = m.pending && m.pending.kind === 'image' ? m.pending : null;
-            const imgs = Array.isArray(m.imgs) ? m.imgs.filter(u => /^https?:/.test(String(u))).slice(0, 4) : [];
+            const imgs = Array.isArray(m.imgs) ? m.imgs.filter(u => /^https?:/.test(String(u))).slice(0, 10) : [];
             if (pending) {
                 const started = Number(pending.started || 0);
                 if (started && Date.now() - started > 180000) {
@@ -3218,9 +3225,14 @@ if (new URLSearchParams(location.search).has('debug')) {
                     });
                     drawKey = created && created.key ? created.key : '';
                     if (!drawApi) throw new Error('no_api');
-                    const drawRes = await fetchJsonWithTimeout(`${drawApi}/image?prompt=${encodeURIComponent(drawRequest.prompt)}&count=${drawRequest.count}`, 150000);
-                    const drawUrls = (drawRes && Array.isArray(drawRes.urls)) ? drawRes.urls.filter(u => /^https?:/.test(String(u))) : [];
-                    if (!drawRes || drawRes.ok === false || !drawUrls.length) throw new Error((drawRes && (drawRes.error || drawRes.detail)) || 'gen_failed');
+                    const imageBatches = [];
+                    for (let remaining = drawRequest.count; remaining > 0; remaining -= 4) imageBatches.push(Math.min(4, remaining));
+                    const batchResults = await Promise.all(imageBatches.map(batchCount =>
+                        fetchJsonWithTimeout(`${drawApi}/image?prompt=${encodeURIComponent(drawRequest.prompt)}&count=${batchCount}`, 150000)
+                    ));
+                    const drawUrls = batchResults.flatMap(result => Array.isArray(result?.urls) ? result.urls : []).filter(u => /^https?:/.test(String(u))).slice(0, 10);
+                    const drawRes = batchResults.find(result => result && result.ok !== false) || batchResults.find(Boolean);
+                    if (!drawUrls.length) throw new Error((drawRes && (drawRes.error || drawRes.detail)) || 'gen_failed');
                     if (drawKey) {
                         await update(ref(db, 'messages/' + drawKey), {
                             pending: null,
@@ -3498,8 +3510,22 @@ if (new URLSearchParams(location.search).has('debug')) {
                 try {
                     const requestsSearchTool = /(محرك\s*(?:بحث|البحث)|أداة\s*(?:بحث|البحث)|اداة\s*(?:بحث|البحث)|بحث\s+(?:صور|ويب|الويب|عادي)|search\s+(?:engine|widget))/iu.test(safeUserMessage);
                     const requestsXo = /(\bxo\b|x\s*[-/]\s*o|tic\s*[- ]?tac\s*[- ]?toe|إكس\s*[- ]?أو|اكس\s*[- ]?او|تيك\s*تاك\s*تو)/iu.test(safeUserMessage);
+                    const requestsFloatingHearts = /(قلب|قلوب|heart)/iu.test(safeUserMessage)
+                        && /(انميشن|انيميشن|متحرك|متطاير|تطاير|يطير|تطير|floating|animation)/iu.test(safeUserMessage);
                     let parsedTool;
-                    if (requestsSearchTool) {
+                    if (requestsFloatingHearts) {
+                        parsedTool = {
+                            tool: {
+                                kind: 'custom',
+                                title: 'قلوب متطايرة',
+                                config: {
+                                    intro: 'معاينة شغّالة: القلوب تصعد وتتحرك تلقائياً. انقر القلب حتى تزيد التفاعلات.',
+                                    controls: [{ type: 'visual', key: 'hearts', preset: 'heart-rain', label: 'خلّي القلوب تطير' }]
+                                }
+                            },
+                            caption: 'سويتلك معاينة أنميشن قلوب متطايرة، تشتغل مباشرة داخل الدردشة وتكدر تنقر عليها.'
+                        };
+                    } else if (requestsSearchTool) {
                         parsedTool = { tool: { kind: 'search', title: 'محرك بحث مشترك', config: { intro: 'اكتب كلمة البحث، ثم اختار الويب أو الصور. النتائج تبين للجميع.', placeholder: 'اكتب عبارة البحث...' } }, caption: 'جهزتلك محرك بحث مباشر؛ اختار الويب أو الصور واكتب اللي تدور عليه.' };
                     } else if (requestsXo) {
                         parsedTool = { tool: { kind: 'tictactoe', title: 'XO · لاعب ضد لاعب', config: {} }, caption: 'جهزت XO: أنت X، خلي شخص واحد ينضم O. تلعبون بالتناوب، وناز تدخل خصم O إذا ما انضم أحد خلال 15 ثانية.' };
