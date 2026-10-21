@@ -225,10 +225,14 @@ if (new URLSearchParams(location.search).has('debug')) {
         function renderImageGenCard(m) {
             const pending = m.pending && m.pending.kind === 'image' ? m.pending : null;
             const imgs = Array.isArray(m.imgs) ? m.imgs.filter(u => /^https?:/.test(String(u))).slice(0, 10) : [];
+            const gallery = imgs.length ? `<div class="ai-gen-grid ${imgs.length > 1 ? 'multi' : ''}">${imgs.map((u, i) => `<a class="ai-gen-item" href="${sanitizeHTML(u)}" target="_blank" rel="noopener noreferrer"><img src="${sanitizeHTML(u)}" alt="${sanitizeHTML(String(m.caption || ('رسمة ناز ' + (i + 1))).slice(0, 120))}" loading="lazy"><span class="ai-gen-open"><i class="fas fa-up-right-from-square"></i></span></a>`).join('')}</div>` : '';
             if (pending) {
                 const started = Number(pending.started || 0);
-                if (started && Date.now() - started > 180000) {
-                    return `<div class="ai-gen-card is-stale"><div class="ai-gen-stale"><i class="fas fa-triangle-exclamation"></i> انقطعت عملية الرسم — اطلبها مرة ثانية وأكملها فوراً.</div><div class="ai-gen-prompt">${sanitizeHTML(String(pending.prompt || '').slice(0, 120))}</div></div>`;
+                const stale = started && Date.now() - started > 600000;
+                const expected = Math.max(1, Math.min(10, Number(pending.count) || 1));
+                const completed = Math.min(expected, Math.max(imgs.length, Number(pending.completed) || 0));
+                if (stale) {
+                    return `<div class="ai-gen-card is-stale"><div class="ai-gen-stale"><i class="fas fa-triangle-exclamation"></i> ${imgs.length ? `توقف التوليد بعد ${imgs.length} من ${expected} صور؛ هاي النتائج اللي اكتملت.` : 'انقطعت عملية الرسم — اطلبها مرة ثانية.'}</div><div class="ai-gen-prompt">${sanitizeHTML(String(pending.prompt || '').slice(0, 120))}</div>${gallery}</div>`;
                 }
                 return `<div class="ai-gen-card is-painting">
                 <div class="ai-gen-canvas">
@@ -238,15 +242,13 @@ if (new URLSearchParams(location.search).has('debug')) {
                 </div>
                 <div class="ai-gen-waves"><span></span><span></span><span></span><span></span><span></span><span></span></div>
                 <div class="ai-gen-status"><span class="s1">ناز تفتح لوحة الرسم 🎨</span><span class="s2">تخلط الألوان…</span><span class="s3">ترسم التفاصيل ✨</span></div>
+                <div class="ai-gen-progress">${completed} / ${expected} صورة</div>
                 <div class="ai-gen-prompt">${sanitizeHTML(String(pending.prompt || '').slice(0, 140))}</div>
+                ${gallery}
             </div>`;
             }
             if (!imgs.length) return '';
-            return `<div class="ai-gen-card">
-            <div class="ai-gen-grid ${imgs.length > 1 ? 'multi' : ''}">
-                ${imgs.map((u, i) => `<a class="ai-gen-item" href="${sanitizeHTML(u)}" target="_blank" rel="noopener noreferrer"><img src="${sanitizeHTML(u)}" alt="${sanitizeHTML(String(m.caption || ('رسمة ناز ' + (i + 1))).slice(0, 120))}" loading="lazy"><span class="ai-gen-open"><i class="fas fa-up-right-from-square"></i></span></a>`).join('')}
-            </div>
-        </div>`;
+            return `<div class="ai-gen-card">${gallery}</div>`;
         }
         function renderEmbedCard(embed) {
             const data = embed || {};
@@ -3210,6 +3212,8 @@ if (new URLSearchParams(location.search).has('debug')) {
                     return;
                 }
                 let drawKey = '';
+                let drawUrls = [];
+                let drawRes = null;
                 try {
                     showNotification('🎨 ناز بدت ترسم... انتظر شوي');
                     const drawApi = typeof resolveCloudApiUrl === 'function' ? resolveCloudApiUrl() : '';
@@ -3225,34 +3229,64 @@ if (new URLSearchParams(location.search).has('debug')) {
                     });
                     drawKey = created && created.key ? created.key : '';
                     if (!drawApi) throw new Error('no_api');
-                    const imageBatches = [];
-                    for (let remaining = drawRequest.count; remaining > 0; remaining -= 4) imageBatches.push(Math.min(4, remaining));
-                    const batchResults = await Promise.all(imageBatches.map(batchCount =>
-                        fetchJsonWithTimeout(`${drawApi}/image?prompt=${encodeURIComponent(drawRequest.prompt)}&count=${batchCount}`, 150000)
-                    ));
-                    const drawUrls = batchResults.flatMap(result => Array.isArray(result?.urls) ? result.urls : []).filter(u => /^https?:/.test(String(u))).slice(0, 10);
-                    const drawRes = batchResults.find(result => result && result.ok !== false) || batchResults.find(Boolean);
+                    let noProgressAttempts = 0;
+                    const drawStartedAt = Date.now();
+                    while (drawUrls.length < drawRequest.count && noProgressAttempts < 2 && Date.now() - drawStartedAt < 480000) {
+                        const batchCount = Math.min(4, drawRequest.count - drawUrls.length);
+                        let result = null;
+                        try {
+                            result = await fetchJsonWithTimeout(`${drawApi}/image?prompt=${encodeURIComponent(drawRequest.prompt)}&count=${batchCount}`, 150000);
+                        } catch (batchError) {
+                            console.warn('Image batch failed; retrying remaining count:', batchError);
+                        }
+                        if (result) drawRes = result;
+                        const beforeCount = drawUrls.length;
+                        if (Array.isArray(result?.urls)) {
+                            for (const url of result.urls) {
+                                if (/^https?:/.test(String(url)) && !drawUrls.includes(url) && drawUrls.length < drawRequest.count) drawUrls.push(url);
+                            }
+                        }
+                        if (drawUrls.length === beforeCount) noProgressAttempts++;
+                        else noProgressAttempts = 0;
+                        if (drawKey && drawUrls.length) {
+                            try {
+                                await update(ref(db, 'messages/' + drawKey), {
+                                    imgs: drawUrls,
+                                    pending: { kind: 'image', prompt: drawRequest.prompt, count: drawRequest.count, completed: drawUrls.length, started: Date.now() }
+                                });
+                            } catch (progressError) {
+                                console.warn('Could not update partial image results:', progressError);
+                            }
+                        }
+                        if (drawUrls.length < drawRequest.count && (noProgressAttempts > 0 || (result?.urls || []).length < batchCount)) {
+                            await new Promise(resolve => setTimeout(resolve, 1200));
+                        }
+                    }
                     if (!drawUrls.length) throw new Error((drawRes && (drawRes.error || drawRes.detail)) || 'gen_failed');
                     if (drawKey) {
                         await update(ref(db, 'messages/' + drawKey), {
                             pending: null,
                             imgs: drawUrls,
                             model: String(drawRes.model || ''),
-                            caption: `🎨 ${drawRequest.prompt} · سويتها حسب طلبك، وإذا تحب أغيّر الستايل گلي.`.slice(0, 160)
+                            caption: `🎨 ${drawRequest.prompt} · ${drawUrls.length}${drawUrls.length < drawRequest.count ? ` من ${drawRequest.count}` : ''} صورة`.slice(0, 160)
                         });
                     }
-                    showNotification('✅ ناز خلصت الرسمة');
+                    showNotification(`✅ ناز جهزت ${drawUrls.length} من ${drawRequest.count} صور`);
                     return;
                 } catch (drawError) {
                     console.warn('🎨 image generation failed:', drawError);
                     const errText = `ما كدرت أكمل الرسمة 😕 — جرّب مرة ثانية أو غيّر الوصف شوي.`;
                     try {
                         if (drawKey) {
-                            await update(ref(db, 'messages/' + drawKey), {
+                            await update(ref(db, 'messages/' + drawKey), drawUrls.length ? {
+                                pending: null,
+                                imgs: drawUrls,
+                                caption: `🎨 ${drawRequest.prompt} · اكتملت ${drawUrls.length} صورة قبل توقف التوليد.`.slice(0, 160)
+                            } : {
                                 pending: null,
                                 imgs: null,
                                 txt: errText,
-                            caption: `🎨 ${drawRequest.prompt} · سويتها حسب طلبك، وإذا تحب أغيّر الستايل گلي.`.slice(0, 160)
+                                caption: `🎨 ${drawRequest.prompt} · تعذر إكمال التوليد.`.slice(0, 160)
                             });
                         } else {
                             await push(ref(db, 'messages'), {

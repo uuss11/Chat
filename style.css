@@ -988,6 +988,7 @@ button:focus-visible, [role="button"]:focus-visible, a:focus-visible, input:focu
 .ai-gen-waves span:nth-child(3) { animation-delay: .24s; } .ai-gen-waves span:nth-child(4) { animation-delay: .36s; }
 .ai-gen-waves span:nth-child(5) { animation-delay: .48s; } .ai-gen-waves span:nth-child(6) { animation-delay: .6s; }
 .ai-gen-status { position: relative; height: 20px; margin-top: 8px; font-size: .82rem; text-align: center; }
+.ai-gen-progress { margin: 6px auto 0; width: fit-content; padding: 3px 10px; border: 1px solid rgba(160,120,255,.28); border-radius: 999px; color: rgba(224,214,255,.92); font-size: .72rem; text-align: center; }
 .ai-gen-status span { position: absolute; inset: 0; opacity: 0; animation: aiStatus 7.5s infinite; }
 .ai-gen-status .s1 { animation-delay: 0s; } .ai-gen-status .s2 { animation-delay: 2.5s; } .ai-gen-status .s3 { animation-delay: 5s; }
 .ai-gen-prompt { margin-top: 6px; font-size: .72rem; opacity: .6; text-align: center; direction: rtl; }
