@@ -222,6 +222,38 @@ if (new URLSearchParams(location.search).has('debug')) {
             return { prompt: prompt, count: count, raw: value.slice(0, 200) };
         }
 
+        async function translateImagePromptToEnglish(prompt) {
+            const original = String(prompt || '').replace(/\s+/g, ' ').trim().slice(0, 400);
+            if (!/[\u0600-\u06FF]/u.test(original)) return original;
+            let catalog = openRouterModelsCache;
+            try {
+                if (!catalog) catalog = await getOpenRouterModelCatalog();
+            } catch (error) {
+                console.warn('Free model list unavailable for image translation:', error);
+                throw new Error('translation_failed');
+            }
+            const freeModelIds = new Set((catalog || []).filter(model => model && model.isFree).map(model => String(model.id || '')));
+            const translationModels = getModelChain().filter(model => model !== 'openrouter/auto' && freeModelIds.has(model));
+            if (!translationModels.length) throw new Error('translation_failed');
+            const instruction = `Translate the following image description from Arabic to clear, natural English suitable for an AI image generator. Preserve every requested subject, action, style, composition, colors, lighting, setting, and constraints. Do not add details that were not requested. Output only the translated English prompt, with no explanation or quotation marks.\n\nArabic description:\n${original}`;
+            let completion;
+            try {
+                completion = await callOpenRouter([{ role: 'user', content: instruction }], { maxTokens: 220, models: translationModels });
+            } catch (error) {
+                console.warn('Arabic image prompt translation failed:', error);
+                throw new Error('translation_failed');
+            }
+            const translated = String(completion?.text || '')
+                .replace(/^\s*(?:english(?: translation)?|translation)\s*:\s*/i, '')
+                .replace(/^```(?:text)?\s*|\s*```$/gi, '')
+                .replace(/^['"“”]+|['"“”]+$/g, '')
+                .replace(/\s+/g, ' ')
+                .trim()
+                .slice(0, 400);
+            if (!translated || /[\u0600-\u06FF]/u.test(translated)) throw new Error('translation_failed');
+            return translated;
+        }
+
         function renderImageGenCard(m) {
             const pending = m.pending && m.pending.kind === 'image' ? m.pending : null;
             const imgs = Array.isArray(m.imgs) ? m.imgs.filter(u => /^https?:/.test(String(u))).slice(0, 10) : [];
@@ -241,7 +273,7 @@ if (new URLSearchParams(location.search).has('debug')) {
                     <div class="ai-gen-brush"><i class="fas fa-paintbrush"></i></div>
                 </div>
                 <div class="ai-gen-waves"><span></span><span></span><span></span><span></span><span></span><span></span></div>
-                <div class="ai-gen-status"><span class="s1">ناز تفتح لوحة الرسم 🎨</span><span class="s2">تخلط الألوان…</span><span class="s3">ترسم التفاصيل ✨</span></div>
+                <div class="ai-gen-status"><span class="s1">${pending.stage === 'translate' ? 'ناز تترجم الوصف للإنجليزية 🌐' : 'ناز تفتح لوحة الرسم 🎨'}</span><span class="s2">تخلط الألوان…</span><span class="s3">ترسم التفاصيل ✨</span></div>
                 <div class="ai-gen-progress">${completed} / ${expected} صورة</div>
                 <div class="ai-gen-prompt">${sanitizeHTML(String(pending.prompt || '').slice(0, 140))}</div>
                 ${gallery}
@@ -1056,7 +1088,8 @@ if (new URLSearchParams(location.search).has('debug')) {
                 renderProfileCard,
                 renderEmbedCard,
                 detectDrawRequest,
-                renderImageGenCard,
+                        renderImageGenCard,
+                        translateImagePromptToEnglish,
                 unescapeSocialValue,
                 renderQrCard,
                 qrImageUrl,
@@ -2646,7 +2679,9 @@ if (new URLSearchParams(location.search).has('debug')) {
                     ? `كل مفاتيح OpenRouter (${runtimeKeys.length}) مرفوضة أو معطلة؛ افحصها من إعدادات NAZ.`
                     : 'كل مفاتيح OpenRouter في انتظار مؤقت؛ أعد فحصها من إعدادات NAZ أو انتظر انتهاء الحد.');
             }
-            const models = getModelChain();
+            const models = Array.isArray(options.models) && options.models.length
+                ? [...new Set(options.models.map(model => String(model || '').trim()).filter(Boolean))]
+                : getModelChain();
             const failures = [];
             const unavailableKeys = new Set();
             for (const model of models) {
@@ -3223,19 +3258,20 @@ if (new URLSearchParams(location.search).has('debug')) {
                         txt: '',
                         time: serverTimestamp(),
                         avatar: aiAvatar,
-                        pending: { kind: 'image', prompt: drawRequest.prompt, count: drawRequest.count, started: Date.now() },
+                        pending: { kind: 'image', prompt: drawRequest.prompt, count: drawRequest.count, stage: /[\u0600-\u06FF]/u.test(drawRequest.prompt) ? 'translate' : 'drawing', started: Date.now() },
                         caption: `🎨 ناز ترسم: ${drawRequest.prompt}`.slice(0, 160),
                         reply: { name: safeUserName, txt: safeUserMessage.slice(0, 120) }
                     });
                     drawKey = created && created.key ? created.key : '';
                     if (!drawApi) throw new Error('no_api');
+                    const imagePrompt = await translateImagePromptToEnglish(drawRequest.prompt);
                     let noProgressAttempts = 0;
                     const drawStartedAt = Date.now();
                     while (drawUrls.length < drawRequest.count && noProgressAttempts < 2 && Date.now() - drawStartedAt < 480000) {
                         const batchCount = Math.min(4, drawRequest.count - drawUrls.length);
                         let result = null;
                         try {
-                            result = await fetchJsonWithTimeout(`${drawApi}/image?prompt=${encodeURIComponent(drawRequest.prompt)}&count=${batchCount}`, 150000);
+                            result = await fetchJsonWithTimeout(`${drawApi}/image?prompt=${encodeURIComponent(imagePrompt)}&count=${batchCount}`, 150000);
                         } catch (batchError) {
                             console.warn('Image batch failed; retrying remaining count:', batchError);
                         }
@@ -3252,7 +3288,7 @@ if (new URLSearchParams(location.search).has('debug')) {
                             try {
                                 await update(ref(db, 'messages/' + drawKey), {
                                     imgs: drawUrls,
-                                    pending: { kind: 'image', prompt: drawRequest.prompt, count: drawRequest.count, completed: drawUrls.length, started: Date.now() }
+                                    pending: { kind: 'image', prompt: drawRequest.prompt, count: drawRequest.count, completed: drawUrls.length, stage: 'drawing', started: Date.now() }
                                 });
                             } catch (progressError) {
                                 console.warn('Could not update partial image results:', progressError);
@@ -3275,7 +3311,9 @@ if (new URLSearchParams(location.search).has('debug')) {
                     return;
                 } catch (drawError) {
                     console.warn('🎨 image generation failed:', drawError);
-                    const errText = `ما كدرت أكمل الرسمة 😕 — جرّب مرة ثانية أو غيّر الوصف شوي.`;
+                    const errText = drawError?.message === 'translation_failed'
+                        ? 'ما كدرت أترجم الوصف العربي للإنجليزية 😕 — تأكد من مفتاح ناز واختيار نموذج مجاني من إعداداتها، أو جرّب تكتب الوصف بالإنجليزي.'
+                        : `ما كدرت أكمل الرسمة 😕 — جرّب مرة ثانية أو غيّر الوصف شوي.`;
                     try {
                         if (drawKey) {
                             await update(ref(db, 'messages/' + drawKey), drawUrls.length ? {
