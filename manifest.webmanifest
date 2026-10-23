@@ -1,0 +1,28 @@
+{
+  "id": "./",
+  "name": "REZA CHAT — دردشة عربية",
+  "short_name": "REZA CHAT",
+  "description": "مساحة دردشة عربية سريعة مع المساعد ناز.",
+  "lang": "ar",
+  "dir": "rtl",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "display_override": ["standalone", "minimal-ui"],
+  "background_color": "#101719",
+  "theme_color": "#101719",
+  "icons": [
+    {
+      "src": "icons/reza-chat-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "icons/reza-chat-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any maskable"
+    }
+  ]
+}

@@ -256,8 +256,13 @@ if (new URLSearchParams(location.search).has('debug')) {
 
         function renderImageGenCard(m) {
             const pending = m.pending && m.pending.kind === 'image' ? m.pending : null;
-            const imgs = Array.isArray(m.imgs) ? m.imgs.filter(u => /^https?:/.test(String(u))).slice(0, 10) : [];
-            const gallery = imgs.length ? `<div class="ai-gen-grid ${imgs.length > 1 ? 'multi' : ''}">${imgs.map((u, i) => `<a class="ai-gen-item" href="${sanitizeHTML(u)}" target="_blank" rel="noopener noreferrer"><img src="${sanitizeHTML(u)}" alt="${sanitizeHTML(String(m.caption || ('رسمة ناز ' + (i + 1))).slice(0, 120))}" loading="lazy"><span class="ai-gen-open"><i class="fas fa-up-right-from-square"></i></span></a>`).join('')}</div>` : '';
+            const imgs = Array.isArray(m.imgs)
+                ? m.imgs.map(value => sanitizeURL(String(value || ''))).filter(url => url && /^https?:/i.test(url)).slice(0, 10)
+                : [];
+            const gallery = imgs.length ? `<div class="ai-gen-grid ${imgs.length > 1 ? 'multi' : ''}">${imgs.map((url, i) => {
+                const alt = sanitizeHTML(String(m.caption || ('رسمة ناز ' + (i + 1))).slice(0, 120));
+                return `<button type="button" class="ai-gen-item" data-gallery-open="${sanitizeHTML(url)}" data-gallery-caption="${alt}" aria-label="فتح الصورة ${i + 1} بملء الشاشة"><img src="${sanitizeHTML(url)}" alt="${alt}" class="is-loading" loading="lazy" onload="this.classList.remove('is-loading')" onerror="this.classList.remove('is-loading');this.classList.add('is-broken')"><span class="ai-gen-open"><i class="fas fa-expand"></i></span></button>`;
+            }).join('')}</div>` : '';
             if (pending) {
                 const started = Number(pending.started || 0);
                 const stale = started && Date.now() - started > 600000;
@@ -680,7 +685,7 @@ if (new URLSearchParams(location.search).has('debug')) {
         function showError(message) {
             const errorBox = document.getElementById('error-box');
             const errorText = document.getElementById('error-text');
-            errorText.textContent = String(message || 'حدث خطأ غير متوقع');
+            errorText.textContent = String(message || 'صار خلل غير متوقع، جرّب مرة ثانية.');
             errorBox.classList.add('show');
             setTimeout(() => errorBox.classList.remove('show'), 8000);
         }
@@ -1139,21 +1144,21 @@ if (new URLSearchParams(location.search).has('debug')) {
             const loginBtn = document.getElementById('login-btn');
 
             if (!/^[a-z0-9_-]{1,32}$/.test(uid)) {
-                showError('معرف المستخدم يقبل أحرفاً إنجليزية صغيرة وأرقاماً وشرطة فقط، وبحد أقصى 32 حرفاً.');
+                showError('المعرّف لازم يكون إنجليزي صغير أو رقم أو شرطة، وبحد أقصى 32 حرف.');
                 return;
             }
             if (name.length > 40) {
-                showError('الاسم المستعار يجب ألا يتجاوز 40 حرفاً.');
+                showError('الاسم المستعار لا يتجاوز 40 حرف.');
                 return;
             }
             
             if (!uid) { 
-                showError('❌ الرجاء إدخال معرف المستخدم');
+                showError('اكتب معرّف المستخدم أولاً.');
                 return; 
             }
             
             if (!pass) { 
-                showError('❌ الرجاء إدخال كلمة المرور');
+                showError('اكتب كلمة المرور حتى نكمل الدخول.');
                 return; 
             }
 
@@ -1171,7 +1176,7 @@ if (new URLSearchParams(location.search).has('debug')) {
 
             loadingTimeout = setTimeout(() => {
                 hideLoading();
-                showError('⏱️ انتهى وقت الانتظار! تحقق من اتصالك بالإنترنت وإعدادات Firebase وقواعد قاعدة البيانات.');
+                showError('الانتظار طول؛ تأكد من النت وإعدادات Firebase وجرب بعد شوي.');
             }, 15000);
 
             try {
@@ -1184,9 +1189,9 @@ if (new URLSearchParams(location.search).has('debug')) {
                     console.error('Database read error:', dbError);
                     hideLoading();
                     if (dbError.message && dbError.message.includes('permission_denied')) {
-                        showError('❌ خطأ في الصلاحيات! عدل Firebase Rules');
+                        showError('الصلاحيات مو مفعّلة؛ راجع إعدادات Firebase Rules.');
                     } else {
-                        showError('❌ لا يمكن الوصول إلى قاعدة البيانات: ' + dbError.message);
+                        showError('ما قدرنا نوصل لقاعدة البيانات؛ تأكد من النت وجرب بعد شوي.');
                     }
                     return;
                 }
@@ -1194,7 +1199,7 @@ if (new URLSearchParams(location.search).has('debug')) {
                 // التحقق إذا كان المستخدم محظور
                 if(snap.exists() && snap.val().isBanned) {
                     hideLoading();
-                    showError('🚫 أنت محظور من دخول المملكة!');
+                    showError('حسابك محظور حالياً، تواصل ويا المالك إذا تعتقد أكو خطأ.');
                     return;
                 }
                 
@@ -1223,7 +1228,7 @@ if (new URLSearchParams(location.search).has('debug')) {
                     
                     if (!passwordValid) {
                         hideLoading();
-                        showError('❌ كلمة المرور غير صحيحة!');
+                        showError('كلمة المرور مو صحيحة؛ جرّب مرة ثانية.');
                         return;
                     }
                     // تسجيل دخول ناجح
@@ -1233,7 +1238,7 @@ if (new URLSearchParams(location.search).has('debug')) {
                 } else {
                     if (pass.length < 10) {
                         hideLoading();
-                        showError('كلمة المرور للحساب الجديد يجب أن تكون 10 أحرف على الأقل.');
+                        showError('للحساب الجديد خلي كلمة المرور 10 أحرف على الأقل.');
                         return;
                     }
                     // إنشاء حساب جديد (كلمة المرور مهشّنة)
@@ -1300,7 +1305,8 @@ if (new URLSearchParams(location.search).has('debug')) {
             } catch (error) {
                 console.error('Login error:', error);
                 hideLoading();
-                showError('❌ خطأ غير متوقع: ' + error.message);
+                const code = String(error?.code || '').toLowerCase();
+                showError(code.includes('permission') ? 'ما عدنا صلاحية نكمل الدخول؛ راجع إعدادات Firebase.' : /network|unavailable|disconnected/.test(code) ? 'النت أو قاعدة البيانات مو متصلة؛ جرّب بعد شوي.' : 'صار خلل بالدخول؛ تأكد من المعلومات وجرب مرة ثانية.');
             }
         };
 
@@ -1401,17 +1407,31 @@ if (new URLSearchParams(location.search).has('debug')) {
         }
 
         let messageRenderSequence = 0;
+        let knownMessageIds = new Set();
+        let unreadMessageCount = 0;
+        const messageMenuRegistry = new Map();
         const chatFlowElement = document.getElementById('chat-flow');
         const scrollLatestButton = document.getElementById('scroll-latest-btn');
+        function setUnreadMessageCount(value) {
+            unreadMessageCount = Math.max(0, Number(value) || 0);
+            const badge = document.getElementById('unread-count');
+            if (badge) {
+                badge.hidden = unreadMessageCount === 0;
+                badge.textContent = unreadMessageCount > 99 ? '99+' : String(unreadMessageCount);
+            }
+            if (scrollLatestButton) scrollLatestButton.setAttribute('aria-label', unreadMessageCount ? `الانتقال إلى آخر رسالة، ${unreadMessageCount} رسائل جديدة` : 'الانتقال إلى آخر رسالة');
+        }
         function updateScrollLatestButton() {
             if (!chatFlowElement || !scrollLatestButton) return;
             const distanceFromLatest = chatFlowElement.scrollHeight - chatFlowElement.clientHeight - chatFlowElement.scrollTop;
             const visible = distanceFromLatest > 120;
             scrollLatestButton.classList.toggle('is-visible', visible);
             scrollLatestButton.setAttribute('aria-hidden', String(!visible));
+            if (!visible && unreadMessageCount) setUnreadMessageCount(0);
         }
         chatFlowElement?.addEventListener('scroll', updateScrollLatestButton, { passive: true });
         scrollLatestButton?.addEventListener('click', () => {
+            setUnreadMessageCount(0);
             chatFlowElement?.scrollTo({ top: chatFlowElement.scrollHeight, behavior: 'smooth' });
         });
         window.addEventListener('resize', updateScrollLatestButton);
@@ -1435,8 +1455,19 @@ if (new URLSearchParams(location.search).has('debug')) {
                 const renderSequence = ++messageRenderSequence;
                 const flow = document.getElementById('chat-flow');
                 const stayAtLatest = flow.scrollHeight - flow.scrollTop - flow.clientHeight <= 120;
+                const initialSnapshot = isInitialLoad;
                 const liveMessages = new Map();
-                snap.forEach(child => liveMessages.set(child.key, child.val()));
+                const nextMessageIds = new Set();
+                let newIncomingMessages = 0;
+                snap.forEach(child => {
+                    const message = child.val();
+                    nextMessageIds.add(child.key);
+                    liveMessages.set(child.key, message);
+                    if (!initialSnapshot && !knownMessageIds.has(child.key) && message?.uid !== me?.user) newIncomingMessages++;
+                });
+                knownMessageIds = nextMessageIds;
+                if (initialSnapshot || stayAtLatest) setUnreadMessageCount(0);
+                else if (newIncomingMessages) setUnreadMessageCount(unreadMessageCount + newIncomingMessages);
                 const replyPreview = reply => {
                     const source = reply?.messageId ? liveMessages.get(reply.messageId) : null;
                     const deleted = Boolean(reply?.messageId && source?.deleted);
@@ -1454,6 +1485,7 @@ if (new URLSearchParams(location.search).has('debug')) {
                 const allUsers = usersSnap.val() || {};
                 if (renderSequence !== messageRenderSequence) return;
                 flow.replaceChildren();
+                messageMenuRegistry.clear();
 
                 let msgCount = 0, imgCount = 0;
 
@@ -1468,8 +1500,11 @@ if (new URLSearchParams(location.search).has('debug')) {
                     const userAvatar = sanitizeURL(rawAvatar) || getDefaultAvatarUrl(sanitizeHTML(m.uid));
                     
                     const div = document.createElement('div');
-                    div.className = `msg-container ${m.uid === me.user ? 'mine' : 'others'} msg-anim`;
+                    const isNaz = m.uid === 'naz_ai';
+                    div.className = `msg-container ${m.uid === me.user ? 'mine' : 'others'} ${isNaz ? 'is-naz' : ''} msg-anim`;
                     div.id = `msg-${sanitizeHTML(child.key)}`;
+                    div.dataset.messageKey = child.key;
+                    messageMenuRegistry.set(child.key, m);
                     
                     // 🛡️ تنقية بيانات المستخدم قبل الإدراج في HTML
                     const safeName = sanitizeHTML(m.name);
@@ -1478,9 +1513,11 @@ if (new URLSearchParams(location.search).has('debug')) {
                     
                     const isOwner = m.uid === 'reza';
                     const ownerBadge = isOwner ? '<span class="owner-badge"><i class="fas fa-crown"></i> المالك</span>' : '';
+                    const assistantBadge = isNaz ? '<span class="naz-badge"><i class="fas fa-sparkles"></i> مساعد</span>' : '';
                     const pinnedBadge = m.isPinned ? '<span class="pinned-badge"><i class="fas fa-thumbtack"></i> مثبت</span>' : '';
                     
                     let content = '';
+                    let textContentDirection = false;
                     if ((m.pending && m.pending.kind === 'image') || (Array.isArray(m.imgs) && m.imgs.length)) {
                         content = renderImageGenCard(m);
                         if (m.caption) content += `<div class="image-caption">${sanitizeHTML(m.caption)}</div>`;
@@ -1526,6 +1563,7 @@ if (new URLSearchParams(location.search).has('debug')) {
                             : processMessageText(m.txt);
                     } else {
                         content = processMessageText(m.txt);
+                        textContentDirection = true;
                     }
                     
                     const safeM = JSON.stringify(m).replace(/"/g, '&quot;').replace(/'/g, '&#39;');
@@ -1534,12 +1572,12 @@ if (new URLSearchParams(location.search).has('debug')) {
                         <div class="msg-header">
                             ${m.uid === me.user ? '' : `<img src="${safeAvatarAttr}" class="msg-avatar" alt="${safeName}" onclick="openUserAvatarModal('${safeAvatarAttr}')" onerror="this.src='${getDefaultAvatarUrl(safeUid)}'">`}
                             <div class="msg-sender-info">
-                                <span class="msg-name">${safeName} ${ownerBadge} ${pinnedBadge}</span>
+                                <span class="msg-name">${safeName} ${ownerBadge} ${assistantBadge} ${pinnedBadge}</span>
                                 <span class="msg-time">${formatTime(m.time)}</span>
                             </div>
                             ${m.uid === me.user ? `<img src="${safeAvatarAttr}" class="msg-avatar" alt="${safeName}" onclick="openUserAvatarModal('${safeAvatarAttr}')" onerror="this.src='${getDefaultAvatarUrl(safeUid)}'">` : ''}
                         </div>
-                        <div class="bubble ${isBanned ? 'banned-msg' : ''} ${m.tool || m.themeProposal ? 'tool-bubble' : ''}" ${m.tool && TOOL_KINDS[m.tool.kind] || m.themeProposal ? '' : `onclick="openMenu('${sanitizeHTML(child.key)}', ${safeM})"`}>
+                        <div class="bubble ${isBanned ? 'banned-msg' : ''} ${isNaz ? 'naz-bubble' : ''} ${m.tool || m.themeProposal ? 'tool-bubble' : ''}" ${textContentDirection ? 'dir="auto"' : ''} ${m.tool && TOOL_KINDS[m.tool.kind] || m.themeProposal ? '' : `onclick="openMenu('${sanitizeHTML(child.key)}', ${safeM})"`}>
                             ${m.reply ? replyPreview(m.reply) : ''}
                             ${content}
                         </div>
@@ -1553,7 +1591,7 @@ if (new URLSearchParams(location.search).has('debug')) {
                         const isNewMessage = m.time >= joinTime;
                         if (isNewMessage) {
                             const messageText = typeof m.txt === 'string' ? m.txt : '';
-                            const isMention = (!m.forwarded && (/(?:^|[^\p{L}\p{N}_])@(?:naz|ناز)(?=$|[^\p{L}\p{N}_])/iu.test(messageText) || /(?:^|[^\p{L}\p{N}_])ناز(?:$|[^\p{L}\p{N}_])/iu.test(messageText) || /@(?:انشاء|إنشاء)\s+صور/iu.test(messageText) || /@(?:اداة|أداة)-لعبة\s+تفاعلية/iu.test(messageText)));
+                            const isMention = (!m.forwarded && (/(?:^|[^\p{L}\p{N}_])@(?:naz|ناز)(?=$|[^\p{L}\p{N}_])/iu.test(messageText) || /(?:^|[^\p{L}\p{N}_])ناز(?:$|[^\p{L}\p{N}_])/iu.test(messageText) || /@(?:انشاء|إنشاء)\s+صور/iu.test(messageText) || /@(?:اداة|أداة)-لعبة\s+تفاعلية/iu.test(messageText) || /@(?:بحث|qr)(?=$|[^\p{L}\p{N}_])/iu.test(messageText)));
                             const isReplyToNaz = (!m.forwarded && m.reply && (m.reply.name === (dbAiConfig?.name || 'NAZ Ai') || m.reply.name === 'NAZ Ai'));
                             const shouldReply = Boolean(isMention || isReplyToNaz);
 
@@ -1788,18 +1826,41 @@ if (new URLSearchParams(location.search).has('debug')) {
             jpg: 'image/jpeg', jpeg: 'image/jpeg', png: 'image/png', gif: 'image/gif', webp: 'image/webp', avif: 'image/avif', heic: 'image/heic', heif: 'image/heif',
             mp4: 'video/mp4', m4v: 'video/mp4', webm: 'video/webm', mov: 'video/quicktime', '3gp': 'video/3gpp', ogv: 'video/ogg'
         };
+        async function compressStaticImageToWebp(file, contentType) {
+            if (!['image/jpeg', 'image/png'].includes(contentType) || typeof createImageBitmap !== 'function') return file;
+            let bitmap;
+            try {
+                bitmap = await createImageBitmap(file, { imageOrientation: 'from-image' });
+                const canvas = document.createElement('canvas');
+                canvas.width = bitmap.width;
+                canvas.height = bitmap.height;
+                const context = canvas.getContext('2d', { alpha: true });
+                if (!context) return file;
+                context.drawImage(bitmap, 0, 0);
+                const quality = contentType === 'image/png' ? 0.9 : 0.84;
+                const blob = await new Promise(resolve => canvas.toBlob(resolve, 'image/webp', quality));
+                if (!blob || blob.type !== 'image/webp' || blob.size >= file.size) return file;
+                const name = String(file.name || 'chat-image').replace(/\.[^.]+$/, '') || 'chat-image';
+                return new File([blob], `${name}.webp`, { type: 'image/webp', lastModified: file.lastModified || Date.now() });
+            } catch (error) {
+                console.warn('WebP compression skipped; keeping original image:', error?.message || error);
+                return file;
+            } finally {
+                bitmap?.close?.();
+            }
+        }
         window.sendImage = () => {
             if (!me) return showNotification('سجّل دخولك أولاً حتى ترسل ملف.');
             if (isUploadingMedia) return showNotification('انتظر اكتمال رفع الملف الحالي.');
             document.getElementById('media-file-input')?.click();
         };
         window.handleMediaSelection = async (picker) => {
-            const file = picker?.files?.[0];
+            let file = picker?.files?.[0];
             if (picker) picker.value = '';
             if (!file) return;
             if (!me || !isFirebaseReady) return showNotification('الدردشة مو جاهزة حالياً؛ حاول بعد شوي.');
             const ext = String(file.name || '').split('.').pop().toLowerCase();
-            const contentType = String(file.type || MEDIA_TYPE_BY_EXTENSION[ext] || '').toLowerCase();
+            let contentType = String(file.type || MEDIA_TYPE_BY_EXTENSION[ext] || '').toLowerCase();
             if (!CHAT_MEDIA_TYPES.has(contentType)) {
                 showNotification('صيغة الملف غير مدعومة؛ اختار صورة أو فيديو شائع.');
                 return;
@@ -1815,6 +1876,18 @@ if (new URLSearchParams(location.search).has('debug')) {
             isUploadingMedia = true;
             showNotification(`جاري رفع ${isVideo ? 'الفيديو' : 'الصورة'}... 0%`);
             try {
+                if (contentType === 'image/jpeg' || contentType === 'image/png') {
+                    showNotification('جاري ضغط الصورة إلى WebP...');
+                    const originalSize = file.size;
+                    const compressedFile = await compressStaticImageToWebp(file, contentType);
+                    if (compressedFile !== file) {
+                        file = compressedFile;
+                        contentType = 'image/webp';
+                        const savedPercent = Math.max(1, Math.round((1 - file.size / originalSize) * 100));
+                        showNotification(`انضغطت الصورة WebP ووفّرت ${savedPercent}%؛ جاري الرفع...`);
+                    }
+                }
+                if (file.size > MAX_CHAT_MEDIA_BYTES) throw new Error('file_too_large');
                 const result = await new Promise((resolve, reject) => {
                     const xhr = new XMLHttpRequest();
                     let lastPercent = 0;
@@ -3170,23 +3243,26 @@ if (new URLSearchParams(location.search).has('debug')) {
                 } catch (error) { console.warn('Could not post missing-key notice:', error?.message || error); }
                 return;
             }
-            
-            // حجز ذرّي لرسالة المنشن: جهاز واحد فقط يستطيع بدء رد ناز.
             try {
                 const claim = await runTransaction(
                     ref(db, `messages/${messageKey}/aiResponded`),
                     current => current === true ? undefined : true,
                     { applyLocally: false }
                 );
-                if (!claim.committed) {
-                    console.log('⏭️ Another device already claimed this mention');
-                    return;
-                }
-            } catch (e) {
-                console.error('Could not claim AI response safely; skipping to avoid duplicate requests', e);
+                if (!claim.committed) return;
+            } catch (error) {
+                console.error('Could not claim AI response safely; skipping to avoid duplicate requests', error);
                 return;
             }
+            const stopNazTyping = beginNazTypingPresence();
+            try {
+                return await triggerAiResponseClaimed(messageKey, userMessage, userName, speakerId);
+            } finally {
+                stopNazTyping();
+            }
+        }
 
+        async function triggerAiResponseClaimed(messageKey, userMessage, userName, speakerId) {
             const safeUserMessage = String(userMessage || '').slice(0, 1500);
             const safeUserName = String(userName || 'صديق').slice(0, 60);
             const currentSpeakerId = String(speakerId || '');
@@ -3238,6 +3314,7 @@ if (new URLSearchParams(location.search).has('debug')) {
                 }
             }
 
+            const forcedWebSearch = /(?:^|\s)@بحث(?=\s|$)/iu.test(safeUserMessage);
             const requestKind = detectRequestKind(safeUserMessage).kind;
             console.log('🧭 NAZ request kind:', requestKind);
             const drawRequest = detectDrawRequest(safeUserMessage);
@@ -3464,11 +3541,11 @@ if (new URLSearchParams(location.search).has('debug')) {
                     console.warn('Social route failed, falling back to text:', error);
                 }
             }
-            if (requestKind === 'web') {
+            if (requestKind === 'web' || forcedWebSearch) {
                 try {
                     showNotification('NAZ تبحث في الويب... 🌐');
                     const term = safeUserMessage
-                        .replace(/@(?:naz|ناز)/giu, ' ')
+                        .replace(/@(?:naz|ناز|بحث)/giu, ' ')
                         .replace(/(ابحث|أبحث|ابحثي|بحث|دور|فتش|لقيلي|جيبلي|هات|عن|search|look up)/giu, ' ')
                         .replace(/\s+/g, ' ')
                         .trim()
@@ -3895,6 +3972,73 @@ ${memoryContext ? `ذاكرة المحادثة: استخدمي منها فقط �
             document.getElementById('image-modal').style.display = 'none';
         };
 
+        let activeGeneratedImageUrl = '';
+        let activeGeneratedImageCaption = '';
+        const generatedGalleryModal = document.getElementById('generated-gallery-modal');
+        const generatedGalleryImage = document.getElementById('generated-gallery-image');
+        generatedGalleryImage?.addEventListener('load', () => generatedGalleryImage.classList.remove('is-loading', 'is-broken'));
+        generatedGalleryImage?.addEventListener('error', () => { generatedGalleryImage.classList.remove('is-loading'); generatedGalleryImage.classList.add('is-broken'); });
+        window.openGeneratedGallery = (rawUrl, caption = '') => {
+            const safeUrl = sanitizeURL(rawUrl);
+            if (!safeUrl || !/^https?:/i.test(safeUrl)) return;
+            activeGeneratedImageUrl = safeUrl;
+            activeGeneratedImageCaption = String(caption || 'صورة من ناز').slice(0, 160);
+            document.getElementById('generated-gallery-caption').textContent = activeGeneratedImageCaption;
+            generatedGalleryImage.classList.remove('is-broken');
+            generatedGalleryImage.classList.add('is-loading');
+            generatedGalleryImage.src = safeUrl;
+            generatedGalleryModal.classList.add('is-open');
+            generatedGalleryModal.setAttribute('aria-hidden', 'false');
+        };
+        window.closeGeneratedGallery = event => {
+            if (event && event.target !== generatedGalleryModal) return;
+            generatedGalleryModal.classList.remove('is-open');
+            generatedGalleryModal.setAttribute('aria-hidden', 'true');
+            generatedGalleryImage.removeAttribute('src');
+            activeGeneratedImageUrl = '';
+        };
+        window.downloadGeneratedImage = async () => {
+            if (!activeGeneratedImageUrl) return;
+            try {
+                const response = await fetch(activeGeneratedImageUrl, { mode: 'cors', credentials: 'omit' });
+                if (!response.ok) throw new Error('download_failed');
+                const blob = await response.blob();
+                const objectUrl = URL.createObjectURL(blob);
+                const link = document.createElement('a');
+                link.href = objectUrl;
+                link.download = `naz-image-${Date.now()}.${blob.type.includes('png') ? 'png' : blob.type.includes('webp') ? 'webp' : 'jpg'}`;
+                document.body.appendChild(link);
+                link.click();
+                link.remove();
+                setTimeout(() => URL.revokeObjectURL(objectUrl), 5000);
+                showNotification('بدأ تنزيل الصورة.');
+            } catch (error) {
+                const link = document.createElement('a');
+                link.href = activeGeneratedImageUrl;
+                link.target = '_blank';
+                link.rel = 'noopener noreferrer';
+                document.body.appendChild(link);
+                link.click();
+                link.remove();
+                showNotification('فتحنا الصورة؛ إذا ما بدأ التنزيل احفظها من القائمة.');
+            }
+        };
+        window.shareGeneratedImage = async () => {
+            if (!activeGeneratedImageUrl) return;
+            try {
+                if (navigator.share) await navigator.share({ title: 'صورة من ناز', text: activeGeneratedImageCaption, url: activeGeneratedImageUrl });
+                else if (navigator.clipboard?.writeText) {
+                    await navigator.clipboard.writeText(activeGeneratedImageUrl);
+                    showNotification('نُسخ رابط الصورة حتى تشاركها.');
+                } else showNotification('المشاركة مو متاحة بهالمتصفح.');
+            } catch (error) {
+                if (error?.name !== 'AbortError') showNotification('ما قدرنا نشارك الصورة؛ جرّب نسخ رابطها.');
+            }
+        };
+        document.addEventListener('keydown', event => {
+            if (event.key === 'Escape' && generatedGalleryModal?.classList.contains('is-open')) window.closeGeneratedGallery();
+        });
+
         // فتح صورة الملف الشخصي في المودال
         window.openUserAvatarModal = (src) => {
             document.getElementById('avatar-modal-image').src = src;
@@ -3932,6 +4076,37 @@ ${memoryContext ? `ذاكرة المحادثة: استخدمي منها فقط �
         window.closeForwardModal = (e) => { if (e.target === document.getElementById('modal-forward')) document.getElementById('modal-forward').style.display = 'none'; };
 
         const messageInput = document.getElementById('msg-input');
+        const plusMenu = document.getElementById('composer-plus-menu');
+        const plusMenuTrigger = document.getElementById('plus-menu-trigger');
+        const closePlusMenu = () => {
+            if (plusMenu) plusMenu.hidden = true;
+            plusMenuTrigger?.setAttribute('aria-expanded', 'false');
+        };
+        window.togglePlusMenu = () => {
+            if (!plusMenu) return;
+            plusMenu.hidden = !plusMenu.hidden;
+            plusMenuTrigger?.setAttribute('aria-expanded', String(!plusMenu.hidden));
+        };
+        const composerActionPrompts = {
+            image: '@انشاء صور ',
+            game: '@اداة-لعبة تفاعلية ',
+            qr: '@QR ',
+            search: '@بحث '
+        };
+        plusMenu?.addEventListener('click', event => {
+            const button = event.target.closest('[data-composer-action]');
+            if (!button) return;
+            const prompt = composerActionPrompts[button.dataset.composerAction];
+            if (!prompt || !messageInput) return;
+            messageInput.value = prompt;
+            messageInput.focus();
+            messageInput.setSelectionRange(prompt.length, prompt.length);
+            messageInput.dispatchEvent(new Event('input', { bubbles: true }));
+            closePlusMenu();
+        });
+        document.addEventListener('click', event => {
+            if (!event.target.closest('#composer-plus-menu') && !event.target.closest('#plus-menu-trigger')) closePlusMenu();
+        });
         const mentionSuggestions = document.getElementById('mention-suggestions');
         const mentionItems = Array.from(mentionSuggestions?.querySelectorAll('[data-mention-value]') || []);
         const updateMentionSuggestions = () => {
@@ -3975,6 +4150,10 @@ ${memoryContext ? `ذاكرة المحادثة: استخدمي منها فقط �
         });
         messageInput?.addEventListener('input', updateMentionSuggestions);
         messageInput?.addEventListener('keydown', (e) => {
+            if (e.key === 'Escape' && plusMenu && !plusMenu.hidden) {
+                closePlusMenu();
+                return;
+            }
             if (e.key === 'ArrowDown' && mentionSuggestions && !mentionSuggestions.hidden) {
                 e.preventDefault();
                 mentionItems.find(item => !item.hidden)?.focus();
@@ -4034,30 +4213,54 @@ ${memoryContext ? `ذاكرة المحادثة: استخدمي منها فقط �
             }, 3000);
         });
 
+        let localNazTyping = false;
+        let latestTypingUsers = [];
+        let typingRefreshTimer = null;
+        function renderTypingIndicator() {
+            const indicator = document.getElementById('typing-indicator');
+            const label = document.getElementById('typing-indicator-label');
+            if (!indicator || !label) return;
+            const nazTyping = localNazTyping || latestTypingUsers.some(user => user.uid === 'naz_ai');
+            const others = latestTypingUsers.filter(user => user.uid !== 'naz_ai');
+            if (!nazTyping && !others.length) {
+                indicator.style.display = 'none';
+                indicator.classList.remove('is-naz');
+                return;
+            }
+            indicator.style.display = 'flex';
+            indicator.classList.toggle('is-naz', nazTyping);
+            const names = others.slice(0, 2).map(user => user.name).join(' و ');
+            label.textContent = nazTyping ? (names ? `NAZ يكتب · ${names} يكتبون` : 'NAZ يكتب') : `${names}${others.length > 1 ? ' يكتبون' : ' يكتب'}`;
+        }
+        function beginNazTypingPresence() {
+            localNazTyping = true;
+            renderTypingIndicator();
+            const pulse = () => set(ref(db, 'typing/naz_ai'), { name: 'NAZ', time: Date.now(), assistant: true }).catch(() => {});
+            void pulse();
+            const timer = setInterval(pulse, 2200);
+            return () => {
+                clearInterval(timer);
+                localNazTyping = false;
+                renderTypingIndicator();
+                remove(ref(db, 'typing/naz_ai')).catch(() => {});
+            };
+        }
         function startTypingListener() {
             onValue(ref(db, 'typing'), snap => {
-                const indicator = document.getElementById('typing-indicator');
-                const typingUsers = [];
                 const now = Date.now();
-                if (snap.exists()) {
-                    snap.forEach(child => {
-                        const t = child.val();
-                        if (child.key !== me.user && t.time && (now - t.time) < 5000) {
-                            typingUsers.push(t.name);
-                        }
-                    });
-                }
-                if (typingUsers.length > 0) {
-                    indicator.style.display = 'flex';
-                    const nameText = typingUsers.length === 1 ? typingUsers[0] : typingUsers.slice(0, 2).join(' و ');
-                    const status = indicator.querySelector('span');
-                    const safeName = document.createElement('span');
-                    safeName.className = 'typing-name';
-                    safeName.textContent = nameText;
-                    status.replaceChildren(safeName, document.createTextNode(typingUsers.length === 1 ? ' يكتب' : ' يكتبون'));
-                } else {
-                    indicator.style.display = 'none';
-                }
+                latestTypingUsers = [];
+                if (snap.exists()) snap.forEach(child => {
+                    const value = child.val();
+                    if (child.key !== me.user && value?.time && now - value.time < 5000) {
+                        latestTypingUsers.push({ uid: child.key, name: String(value.name || child.key), time: value.time });
+                    }
+                });
+                renderTypingIndicator();
+                clearTimeout(typingRefreshTimer);
+                typingRefreshTimer = setTimeout(() => {
+                    latestTypingUsers = latestTypingUsers.filter(user => Date.now() - user.time < 5000);
+                    renderTypingIndicator();
+                }, 5100);
             }, () => {});
         }
 
@@ -4216,7 +4419,69 @@ ${memoryContext ? `ذاكرة المحادثة: استخدمي منها فقط �
             }
         }
 
-        document.getElementById('chat-flow').addEventListener('click', event => {
+        const chatFlow = document.getElementById('chat-flow');
+        let messageGesture = null;
+        let messageLongPressTimer = null;
+        let suppressMessageClickUntil = 0;
+        const gestureIgnoredTarget = 'button, a, input, textarea, video, audio, select, [data-tool-action], [data-result-url], [data-file-download], [data-file-copy], .ai-gen-item';
+        chatFlow.addEventListener('pointerdown', event => {
+            if (!event.isPrimary || event.button !== 0 || event.target.closest(gestureIgnoredTarget)) return;
+            const bubble = event.target.closest('.bubble');
+            const container = bubble?.closest('.msg-container');
+            const key = container?.dataset.messageKey;
+            const message = key ? messageMenuRegistry.get(key) : null;
+            if (!bubble || !container || !message || bubble.classList.contains('tool-bubble')) return;
+            messageGesture = { pointerId: event.pointerId, key, message, bubble, x: event.clientX, y: event.clientY, lastX: event.clientX, lastY: event.clientY, movedVertically: false, longPressed: false };
+            clearTimeout(messageLongPressTimer);
+            messageLongPressTimer = setTimeout(() => {
+                if (!messageGesture || messageGesture.pointerId !== event.pointerId || messageGesture.movedVertically) return;
+                messageGesture.longPressed = true;
+                suppressMessageClickUntil = Date.now() + 700;
+                window.openMenu(messageGesture.key, messageGesture.message);
+            }, 560);
+        }, { passive: true });
+        document.addEventListener('pointermove', event => {
+            if (!messageGesture || event.pointerId !== messageGesture.pointerId) return;
+            messageGesture.lastX = event.clientX;
+            messageGesture.lastY = event.clientY;
+            const dx = Math.abs(event.clientX - messageGesture.x);
+            const dy = Math.abs(event.clientY - messageGesture.y);
+            if (dy > 14) {
+                messageGesture.movedVertically = true;
+                clearTimeout(messageLongPressTimer);
+            } else if (dx > 12) clearTimeout(messageLongPressTimer);
+        }, { passive: true });
+        document.addEventListener('pointerup', event => {
+            if (!messageGesture || event.pointerId !== messageGesture.pointerId) return;
+            clearTimeout(messageLongPressTimer);
+            const gesture = messageGesture;
+            messageGesture = null;
+            if (gesture.longPressed) return;
+            const dx = event.clientX - gesture.x;
+            const dy = event.clientY - gesture.y;
+            if (Math.abs(dx) >= 72 && Math.abs(dy) < 56) {
+                activeMsg = { id: gesture.key, ...gesture.message };
+                suppressMessageClickUntil = Date.now() + 450;
+                window.prepareReply();
+                showNotification('تم تجهيز الرد على الرسالة.');
+            }
+        }, { passive: true });
+        document.addEventListener('pointercancel', () => { clearTimeout(messageLongPressTimer); messageGesture = null; }, { passive: true });
+        chatFlow.addEventListener('click', event => {
+            if (Date.now() < suppressMessageClickUntil && event.target.closest('.bubble')) {
+                event.preventDefault();
+                event.stopImmediatePropagation();
+                return;
+            }
+            const galleryTrigger = event.target.closest('[data-gallery-open]');
+            if (galleryTrigger) {
+                event.preventDefault();
+                event.stopImmediatePropagation();
+                window.openGeneratedGallery(galleryTrigger.dataset.galleryOpen, galleryTrigger.dataset.galleryCaption || 'صورة من ناز');
+                return;
+            }
+        }, true);
+        chatFlow.addEventListener('click', event => {
             const themeAction = event.target.closest('[data-theme-action]');
             if (themeAction) {
                 event.preventDefault();
@@ -4431,6 +4696,21 @@ ${memoryContext ? `ذاكرة المحادثة: استخدمي منها فقط �
                 hideReactionPicker();
             }
         });
+
+        function syncChatVisualViewport() {
+            const height = window.visualViewport?.height;
+            if (height && Number.isFinite(height)) document.documentElement.style.setProperty('--chat-visible-height', `${Math.round(height)}px`);
+        }
+        syncChatVisualViewport();
+        window.visualViewport?.addEventListener('resize', syncChatVisualViewport, { passive: true });
+        window.addEventListener('orientationchange', syncChatVisualViewport, { passive: true });
+        function registerChatServiceWorker() {
+            if (!('serviceWorker' in navigator) || !/^https?:$/i.test(location.protocol)) return;
+            const workerUrl = new URL('./service-worker.js', document.baseURI);
+            const scopeUrl = new URL('./', document.baseURI);
+            navigator.serviceWorker.register(workerUrl.href, { scope: scopeUrl.pathname }).catch(error => console.warn('PWA offline shell registration skipped:', error?.message || error));
+        }
+        registerChatServiceWorker();
 
         if (window.__chatBootstrapTrace) window.__chatBootstrapTrace.stage = 'bottom-reached';
         // تهيئة Firebase بعد DOM؛ وحدات ES قد تبدأ بعد DOMContentLoaded في بعض المتصفحات/الويب فيو.

@@ -7,9 +7,15 @@
     <meta name="description" content="REZA CHAT — مساحة دردشة عربية هادئة ومتجاوبة.">
     <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline' https://www.gstatic.com https://www.googletagmanager.com https://*.firebaseio.com https://*.firebasedatabase.app; style-src 'self' 'unsafe-inline' https://cdnjs.cloudflare.com https://fonts.googleapis.com; font-src https://cdnjs.cloudflare.com https://fonts.gstatic.com; img-src 'self' https: data:; connect-src 'self' https://www.gstatic.com https://www.googletagmanager.com https://*.firebaseio.com https://*.firebasedatabase.app https://*.googleapis.com https://openrouter.ai https://xsgames.co https://commons.wikimedia.org https://*.wikimedia.org https://*.wikipedia.org https://api.duckduckgo.com https://api.openverse.org https://archive.org https://*.archive.org https://cdn.freesound.org https://*.jamendo.com https://live.staticflickr.com https://*.workers.dev wss://*.firebaseio.com wss://*.firebasedatabase.app; media-src 'self' https: blob:; object-src 'none'; frame-src https://www.instagram.com https://www.tiktok.com; base-uri 'self'; form-action 'self'; upgrade-insecure-requests;">
     <title>REZA | Ultra Chat Experience</title>
+    <meta name="mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <link rel="manifest" href="manifest.webmanifest">
+    <link rel="icon" type="image/png" sizes="192x192" href="icons/reza-chat-192.png">
+    <link rel="apple-touch-icon" href="icons/reza-chat-192.png">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
-    <link href="https://fonts.googleapis.com/css2?family=Cairo:wght@300;400;500;600;700;800&family=Tajawal:wght@400;500;700&display=swap" rel="stylesheet">
-    <link rel="stylesheet" href="style.css?v=42">
+    <link href="https://fonts.googleapis.com/css2?family=Tajawal:wght@400;500;700;800&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="style.css?v=52">
 </head>
 <body data-theme="calm">
     <div class="bg-container"></div>
@@ -38,11 +44,31 @@
         <img id="avatar-modal-image" src="" alt="" style="max-width: 80%; max-height: 80%;">
     </div>
 
+    <div class="generated-gallery-modal" id="generated-gallery-modal" onclick="closeGeneratedGallery(event)" aria-hidden="true">
+        <section class="generated-gallery-shell" role="dialog" aria-modal="true" aria-labelledby="generated-gallery-title" onclick="event.stopPropagation()">
+            <header class="generated-gallery-header">
+                <strong id="generated-gallery-title">صورة من ناز</strong>
+                <button type="button" class="image-modal-close" onclick="closeGeneratedGallery()" aria-label="إغلاق الصورة"><i class="fas fa-times"></i></button>
+            </header>
+            <div class="generated-gallery-stage"><img id="generated-gallery-image" src="" alt="صورة أنشأتها ناز" class="is-loading"></div>
+            <p class="generated-gallery-caption" id="generated-gallery-caption"></p>
+            <div class="generated-gallery-actions">
+                <button type="button" class="gallery-action-btn" onclick="downloadGeneratedImage()"><i class="fas fa-download"></i> تنزيل</button>
+                <button type="button" class="gallery-action-btn" onclick="shareGeneratedImage()"><i class="fas fa-share-nodes"></i> مشاركة</button>
+            </div>
+        </section>
+    </div>
+
     <div id="auth-screen">
         <div class="auth-box glass-card">
-            <div class="auth-logo"><i class="fas fa-crown"></i></div>
+            <div class="auth-logo"><img src="icons/reza-chat-192.png" alt="شعار REZA CHAT"></div>
             <h1 class="auth-title">REZA CHAT</h1>
             <p class="auth-subtitle">تجربة دردشة فاخرة بتصميم زجاجي مائي</p>
+            <div class="auth-benefits" aria-label="مميزات REZA CHAT">
+                <span><i class="fas fa-comments" aria-hidden="true"></i> دردشة عربية سريعة</span>
+                <span><i class="fas fa-wand-magic-sparkles" aria-hidden="true"></i> ناز وأدواتها الذكية</span>
+                <span><i class="fas fa-mobile-screen-button" aria-hidden="true"></i> تجربة مريحة على الموبايل</span>
+            </div>
             
             <div class="error-box" id="error-box">
                 <i class="fas fa-exclamation-triangle"></i>
@@ -171,9 +197,9 @@
         <div class="main-content">
             <div class="chat-flow-wrap" style="position: relative; flex: 1; display: flex; flex-direction: column; min-width: 0; min-height: 0;">
                 <div id="chat-flow"></div>
-                <button type="button" class="scroll-latest-btn" id="scroll-latest-btn" aria-label="الانتقال إلى آخر رسالة" title="آخر رسالة" aria-hidden="true"><i class="fas fa-arrow-down" aria-hidden="true"></i></button>
+                <button type="button" class="scroll-latest-btn" id="scroll-latest-btn" aria-label="الانتقال إلى آخر رسالة" title="آخر رسالة" aria-hidden="true"><i class="fas fa-arrow-down" aria-hidden="true"></i><span class="unread-count" id="unread-count" hidden>0</span></button>
                 <div class="typing-indicator" id="typing-indicator">
-                    <span>يكتب</span>
+                    <span id="typing-indicator-label">يكتب</span>
                     <div class="typing-dots"><div class="typing-dot"></div><div class="typing-dot"></div><div class="typing-dot"></div></div>
                 </div>
             </div>
@@ -186,7 +212,14 @@
 
         <div class="footer-bar" style="position: relative;">
             <div class="input-actions">
+                <button type="button" class="input-action-btn plus-menu-trigger" id="plus-menu-trigger" onclick="togglePlusMenu()" title="مزيد من الأدوات" aria-label="فتح أدوات ناز" aria-haspopup="menu" aria-expanded="false"><i class="fas fa-plus"></i></button>
                 <button type="button" class="input-action-btn" onclick="sendImage()" title="إرسال صورة أو فيديو من الجهاز" aria-label="اختيار صورة أو فيديو"><i class="fas fa-photo-film"></i></button>
+            </div>
+            <div class="composer-plus-menu glass-card" id="composer-plus-menu" role="menu" aria-label="أدوات ناز" hidden>
+                <button type="button" role="menuitem" data-composer-action="image"><i class="fas fa-image"></i><span><strong>إنشاء صورة</strong><small>ناز ترسم وصفك</small></span></button>
+                <button type="button" role="menuitem" data-composer-action="game"><i class="fas fa-gamepad"></i><span><strong>لعبة أو أداة</strong><small>تجربة تفاعلية داخل الدردشة</small></span></button>
+                <button type="button" role="menuitem" data-composer-action="qr"><i class="fas fa-qrcode"></i><span><strong>إنشاء QR</strong><small>حوّل رابطاً أو نصاً إلى رمز</small></span></button>
+                <button type="button" role="menuitem" data-composer-action="search"><i class="fas fa-magnifying-glass"></i><span><strong>بحث ويب</strong><small>خلّي ناز تبحث لك</small></span></button>
             </div>
             <input type="file" id="media-file-input" accept="image/*,video/*" hidden onchange="handleMediaSelection(this)">
             <input type="text" id="msg-input" class="glass-input" placeholder="اكتب رسالتك هنا..." maxlength="2000" autocomplete="off" aria-label="اكتب رسالة">
@@ -199,6 +232,21 @@
                 <button type="button" class="mention-suggestion" role="option" aria-selected="false" data-mention-value="@اداة-لعبة تفاعلية">
                     <span class="mention-suggestion-icon"><i class="fas fa-gamepad"></i></span>
                     <span class="mention-suggestion-copy"><strong>@اداة-لعبة تفاعلية</strong><small>اطلب لعبة أو أداة تفاعلية من ناز</small></span>
+                    <span class="mention-suggestion-hint">إدراج</span>
+                </button>
+                <button type="button" class="mention-suggestion" role="option" aria-selected="false" data-mention-value="@ناز">
+                    <span class="mention-suggestion-icon"><i class="fas fa-sparkles"></i></span>
+                    <span class="mention-suggestion-copy"><strong>@ناز</strong><small>اسأل ناز أو اطلب منها مهمة</small></span>
+                    <span class="mention-suggestion-hint">إدراج</span>
+                </button>
+                <button type="button" class="mention-suggestion" role="option" aria-selected="false" data-mention-value="@بحث">
+                    <span class="mention-suggestion-icon"><i class="fas fa-magnifying-glass"></i></span>
+                    <span class="mention-suggestion-copy"><strong>@بحث</strong><small>ابحث عن موضوع في الويب</small></span>
+                    <span class="mention-suggestion-hint">إدراج</span>
+                </button>
+                <button type="button" class="mention-suggestion" role="option" aria-selected="false" data-mention-value="@QR">
+                    <span class="mention-suggestion-icon"><i class="fas fa-qrcode"></i></span>
+                    <span class="mention-suggestion-copy"><strong>@QR</strong><small>أنشئ رمز QR لرابط أو نص</small></span>
                     <span class="mention-suggestion-hint">إدراج</span>
                 </button>
             </div>
@@ -371,6 +419,6 @@
     </div>
 
     <script src="cloud-config.js?v=34"></script>
-    <script type="module" src="script.js?v=51"></script>
+    <script type="module" src="script.js?v=52"></script>
 </body>
 </html>
