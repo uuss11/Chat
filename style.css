@@ -1118,3 +1118,52 @@ button:focus-visible, [role="button"]:focus-visible, a:focus-visible, input:focu
 .tool-heart-particle.p10 { --heart-x: 48%; --heart-size: 14px; --heart-duration: 5.4s; --heart-delay: -4.1s; }
 @keyframes nazHeartFloat { 0% { transform: translate3d(0, 0, 0) rotate(-12deg) scale(.72); opacity: 0; } 12% { opacity: .95; } 55% { transform: translate3d(20px, -112px, 0) rotate(13deg) scale(1); opacity: .9; } 100% { transform: translate3d(-16px, -230px, 0) rotate(-8deg) scale(.8); opacity: 0; } }
 @media (prefers-reduced-motion: reduce) { .tool-heart-particle { animation-duration: 12s; } }
+
+/* ===== تحسينات الواجهة والتطبيق المثبت ===== */
+:root { --chat-viewport-height: 100dvh; }
+*, *::before, *::after { font-family: 'Tajawal', 'Cairo', sans-serif; }
+body { line-height: 1.7; }
+.app-container { height: 100vh; height: var(--chat-viewport-height, 100dvh); min-height: 0; }
+.footer-bar { padding-bottom: max(10px, env(safe-area-inset-bottom)); }
+.auth-screen { background: radial-gradient(ellipse at 50% 15%, rgba(136,185,173,.14), transparent 45%); }
+#auth-screen { background: radial-gradient(ellipse at 50% 12%, rgba(136,185,173,.14), transparent 48%), linear-gradient(155deg, rgba(12,20,23,.16), rgba(12,20,23,.6)); padding: max(14px, env(safe-area-inset-top)) 14px max(14px, env(safe-area-inset-bottom)); }
+.auth-box { border-color: rgba(255,255,255,.14); background: linear-gradient(155deg, rgba(27,42,43,.84), rgba(13,20,22,.9)); }
+.auth-feature-strip { display: grid; grid-template-columns: repeat(3,minmax(0,1fr)); gap: 7px; margin: -12px 0 20px; }
+.auth-feature-strip span { display: flex; align-items: center; justify-content: center; gap: 5px; padding: 8px 5px; border: 1px solid var(--glass-border); border-radius: 12px; background: rgba(255,255,255,.045); color: var(--text-secondary); font-size: .68rem; white-space: nowrap; }
+.auth-feature-strip i { color: var(--primary); }
+.error-box.show { direction: rtl; line-height: 1.7; }
+.msg-container.is-naz .bubble:not(.tool-bubble) { box-shadow: 0 0 0 1px rgba(136,185,173,.14), 0 4px 22px rgba(136,185,173,.09); }
+.msg-container.is-naz .msg-name { color: var(--primary); }
+.naz-assistant-badge { display: inline-flex; align-items: center; gap: 4px; padding: 1px 7px; border: 1px solid var(--primary-glow); border-radius: 999px; background: rgba(136,185,173,.12); color: var(--primary); font-size: .62rem; font-weight: 700; vertical-align: middle; }
+.typing-indicator.is-naz { color: var(--primary); background: rgba(136,185,173,.09); }
+.typing-indicator.is-naz .typing-name { animation: nazTypingGlow 1.4s ease-in-out infinite; }
+@keyframes nazTypingGlow { 0%,100% { text-shadow: 0 0 0 transparent; opacity: .78; } 50% { text-shadow: 0 0 12px var(--primary-glow); opacity: 1; } }
+.message-text { line-height: 1.7; overflow-wrap: anywhere; unicode-bidi: plaintext; }
+.scroll-latest-count { position: absolute; top: -7px; inset-inline-start: -7px; min-width: 19px; height: 19px; padding: 0 5px; border-radius: 999px; display: grid; place-items: center; background: #e45d74; color: white; border: 2px solid var(--bg-gradient-2); font-size: .62rem; font-weight: 800; line-height: 1; }
+.scroll-latest-count[hidden] { display: none; }
+.composer-plus-wrap { position: relative; flex: 0 0 auto; }
+.composer-plus-btn[aria-expanded="true"] { transform: rotate(45deg); color: var(--accent); }
+.composer-plus-menu { position: absolute; z-index: 130; inset-inline-start: 0; bottom: calc(100% + 10px); width: 205px; padding: 7px; border: 1px solid var(--glass-border); border-radius: 16px; background: rgba(14,23,25,.97); box-shadow: 0 16px 40px rgba(0,0,0,.38); backdrop-filter: blur(18px); opacity: 0; visibility: hidden; transform: translateY(8px) scale(.98); transition: .18s ease; }
+.composer-plus-menu.is-open { opacity: 1; visibility: visible; transform: none; }
+.composer-plus-menu button { width: 100%; display: flex; align-items: center; gap: 10px; padding: 10px; border: 0; border-radius: 10px; background: transparent; color: var(--text-primary); text-align: right; cursor: pointer; }
+.composer-plus-menu button:hover, .composer-plus-menu button:focus-visible { outline: none; background: rgba(136,185,173,.12); }
+.composer-plus-menu i { width: 18px; color: var(--primary); text-align: center; }
+.image-modal { flex-direction: column; gap: 14px; padding: max(64px, env(safe-area-inset-top)) 12px max(16px, env(safe-area-inset-bottom)); }
+.image-modal img { max-width: min(96vw, 1200px); max-height: calc(var(--chat-viewport-height, 100dvh) - 150px); object-fit: contain; }
+.image-modal-actions { position: absolute; top: max(20px, env(safe-area-inset-top)); left: 20px; display: flex; gap: 9px; }
+.image-modal-actions button { width: 42px; height: 42px; border: 1px solid rgba(255,255,255,.2); border-radius: 14px; background: rgba(20,24,30,.82); color: #fff; cursor: pointer; }
+.image-modal-actions button:hover { background: var(--primary); color: #101719; }
+.ai-gen-grid { grid-template-columns: repeat(2,minmax(0,1fr)); }
+.ai-gen-item img, .bubble-image { filter: blur(12px); transform: scale(1.015); background: rgba(255,255,255,.05); transition: filter .25s ease, transform .25s ease; }
+.ai-gen-item img.is-loaded, .bubble-image.is-loaded { filter: none; transform: none; }
+.ai-gen-item img.is-broken { display: none; }
+@media (max-width: 520px) { .ai-gen-grid.multi { grid-template-columns: repeat(2,minmax(0,1fr)); } }
+@media (max-width: 360px) { .ai-gen-grid.multi { grid-template-columns: 1fr; } .auth-feature-strip span { font-size: .61rem; } }
+.context-overlay { align-items: flex-end; }
+.context-menu { width: min(420px,100%); border-radius: 20px 20px 0 0; padding-bottom: max(10px, env(safe-area-inset-bottom)); }
+.context-overlay[style*="display: flex"] .context-menu { animation: contextSheetIn .2s ease-out; }
+@keyframes contextSheetIn { from { opacity: .7; transform: translateY(22px); } to { opacity: 1; transform: translateY(0); } }
+.msg-container { touch-action: pan-y; }
+.msg-container.gesture-reply .bubble { outline: 2px solid var(--primary); transform: translateX(5px); }
+.footer-bar { padding-inline: max(10px, env(safe-area-inset-left)) max(10px, env(safe-area-inset-right)); }
+@media (prefers-reduced-motion: reduce) { .typing-indicator.is-naz .typing-name { animation: none; } .composer-plus-menu { transition: none; } }

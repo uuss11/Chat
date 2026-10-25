@@ -8,6 +8,17 @@ if (new URLSearchParams(location.search).has('debug')) {
         import { getDatabase, ref, set, get, push, onValue, query, limitToLast, remove, update, runTransaction, serverTimestamp, onDisconnect } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-database.js";
         import { TOOL_KINDS, renderToolCard, applyToolAction, parseToolResponse, isToolRequest, buildToolPrompt, isImageRequest, buildImageQueryPrompt, detectRequestKind, buildMediaQueryPrompt, parseMediaPlan, wantsMultipleResults, buildFilePrompt, parseFileResponse, mountToolTimers, clearToolTimers, mountToolCanvases, clearToolCanvases } from './naz-tools.js?v=39';
 
+        const syncVisualViewport = () => {
+            const height = window.visualViewport?.height || window.innerHeight;
+            if (height > 0) document.documentElement.style.setProperty('--chat-viewport-height', `${Math.round(height)}px`);
+        };
+        syncVisualViewport();
+        window.addEventListener('resize', syncVisualViewport, { passive: true });
+        window.visualViewport?.addEventListener('resize', syncVisualViewport, { passive: true });
+        if ('serviceWorker' in navigator && /^https?:$/.test(location.protocol)) {
+            window.addEventListener('load', () => navigator.serviceWorker.register('./sw.js', { scope: './' }).catch(error => console.warn('PWA service worker unavailable:', error?.message || error)), { once: true });
+        }
+
         // ============================================
         // 🔐 Security Utilities
         // ============================================
@@ -257,7 +268,7 @@ if (new URLSearchParams(location.search).has('debug')) {
         function renderImageGenCard(m) {
             const pending = m.pending && m.pending.kind === 'image' ? m.pending : null;
             const imgs = Array.isArray(m.imgs) ? m.imgs.filter(u => /^https?:/.test(String(u))).slice(0, 10) : [];
-            const gallery = imgs.length ? `<div class="ai-gen-grid ${imgs.length > 1 ? 'multi' : ''}">${imgs.map((u, i) => `<a class="ai-gen-item" href="${sanitizeHTML(u)}" target="_blank" rel="noopener noreferrer"><img src="${sanitizeHTML(u)}" alt="${sanitizeHTML(String(m.caption || ('رسمة ناز ' + (i + 1))).slice(0, 120))}" loading="lazy"><span class="ai-gen-open"><i class="fas fa-up-right-from-square"></i></span></a>`).join('')}</div>` : '';
+            const gallery = imgs.length ? `<div class="ai-gen-grid ${imgs.length > 1 ? 'multi' : ''}">${imgs.map((u, i) => `<a class="ai-gen-item" href="${sanitizeHTML(u)}" onclick="event.preventDefault(); event.stopPropagation(); openImageModal('${sanitizeHTML(u)}')" aria-label="فتح الصورة ${i + 1}"><img class="is-loading" src="${sanitizeHTML(u)}" alt="${sanitizeHTML(String(m.caption || ('رسمة ناز ' + (i + 1))).slice(0, 120))}" loading="lazy" onload="this.classList.remove('is-loading'); this.classList.add('is-loaded')" onerror="this.classList.remove('is-loading'); this.classList.add('is-broken')"><span class="ai-gen-open"><i class="fas fa-up-right-from-square"></i></span></a>`).join('')}</div>` : '';
             if (pending) {
                 const started = Number(pending.started || 0);
                 const stale = started && Date.now() - started > 600000;
@@ -1401,20 +1412,87 @@ if (new URLSearchParams(location.search).has('debug')) {
         }
 
         let messageRenderSequence = 0;
+        const messageRecordMap = new Map();
+        let knownMessageKeys = new Set();
+        let newMessageCount = 0;
         const chatFlowElement = document.getElementById('chat-flow');
         const scrollLatestButton = document.getElementById('scroll-latest-btn');
+        const scrollLatestCount = document.getElementById('scroll-latest-count');
+        function clearNewMessageCount() {
+            newMessageCount = 0;
+            if (scrollLatestCount) { scrollLatestCount.hidden = true; scrollLatestCount.textContent = ''; }
+        }
+        function incrementNewMessageCount() {
+            newMessageCount++;
+            if (scrollLatestCount) { scrollLatestCount.hidden = false; scrollLatestCount.textContent = newMessageCount > 99 ? '99+' : String(newMessageCount); }
+            if (scrollLatestButton) scrollLatestButton.setAttribute('aria-label', `الانتقال إلى آخر رسالة، ${newMessageCount} رسائل جديدة`);
+        }
         function updateScrollLatestButton() {
             if (!chatFlowElement || !scrollLatestButton) return;
             const distanceFromLatest = chatFlowElement.scrollHeight - chatFlowElement.clientHeight - chatFlowElement.scrollTop;
             const visible = distanceFromLatest > 120;
             scrollLatestButton.classList.toggle('is-visible', visible);
             scrollLatestButton.setAttribute('aria-hidden', String(!visible));
+            if (!visible) clearNewMessageCount();
         }
         chatFlowElement?.addEventListener('scroll', updateScrollLatestButton, { passive: true });
         scrollLatestButton?.addEventListener('click', () => {
             chatFlowElement?.scrollTo({ top: chatFlowElement.scrollHeight, behavior: 'smooth' });
+            clearNewMessageCount();
         });
         window.addEventListener('resize', updateScrollLatestButton);
+        let activeMessageGesture = null;
+        let messageGestureTimer = null;
+        let suppressMessageClick = false;
+        const stopMessageGestureTimer = () => { clearTimeout(messageGestureTimer); messageGestureTimer = null; };
+        const suppressNextMessageClick = () => {
+            suppressMessageClick = true;
+            setTimeout(() => { suppressMessageClick = false; }, 850);
+        };
+        chatFlowElement?.addEventListener('pointerdown', event => {
+            if (event.pointerType !== 'touch' || event.button > 0 || event.target.closest('button,a,input,video,audio,[data-tool-card],.tool-bubble')) return;
+            const container = event.target.closest('.msg-container');
+            const messageId = container?.dataset.msgId;
+            const message = messageRecordMap.get(messageId);
+            if (!container || !message) return;
+            activeMessageGesture = { id: messageId, message, container, x: event.clientX, y: event.clientY, moved: false, fired: false };
+            messageGestureTimer = setTimeout(() => {
+                if (!activeMessageGesture || activeMessageGesture.moved) return;
+                activeMessageGesture.fired = true;
+                suppressNextMessageClick();
+                window.openMenu(activeMessageGesture.id, activeMessageGesture.message);
+            }, 560);
+        }, { passive: true });
+        chatFlowElement?.addEventListener('pointermove', event => {
+            if (!activeMessageGesture) return;
+            const dx = event.clientX - activeMessageGesture.x;
+            const dy = event.clientY - activeMessageGesture.y;
+            if (Math.abs(dx) > 12 || Math.abs(dy) > 12) {
+                activeMessageGesture.moved = true;
+                stopMessageGestureTimer();
+            }
+            activeMessageGesture.container.classList.toggle('gesture-reply', Math.abs(dx) > 12 && Math.abs(dx) > Math.abs(dy));
+            if (Math.abs(dx) >= 72 && Math.abs(dy) < 42) {
+                const { id, message, container } = activeMessageGesture;
+                container.classList.remove('gesture-reply');
+                activeMessageGesture.fired = true;
+                suppressNextMessageClick();
+                activeMsg = { id, ...message };
+                window.prepareReply();
+                activeMessageGesture = null;
+            }
+        }, { passive: true });
+        const finishMessageGesture = () => {
+            stopMessageGestureTimer();
+            activeMessageGesture?.container.classList.remove('gesture-reply');
+            activeMessageGesture = null;
+        };
+        chatFlowElement?.addEventListener('pointerup', finishMessageGesture, { passive: true });
+        chatFlowElement?.addEventListener('pointercancel', finishMessageGesture, { passive: true });
+        chatFlowElement?.addEventListener('click', event => {
+            if (!suppressMessageClick) return;
+            event.preventDefault(); event.stopImmediatePropagation();
+        }, true);
 
         function startChat() {
             // مراقبة الكتابة
@@ -1454,6 +1532,7 @@ if (new URLSearchParams(location.search).has('debug')) {
                 const allUsers = usersSnap.val() || {};
                 if (renderSequence !== messageRenderSequence) return;
                 flow.replaceChildren();
+                messageRecordMap.clear();
 
                 let msgCount = 0, imgCount = 0;
 
@@ -1468,8 +1547,10 @@ if (new URLSearchParams(location.search).has('debug')) {
                     const userAvatar = sanitizeURL(rawAvatar) || getDefaultAvatarUrl(sanitizeHTML(m.uid));
                     
                     const div = document.createElement('div');
-                    div.className = `msg-container ${m.uid === me.user ? 'mine' : 'others'} msg-anim`;
+                    div.className = `msg-container ${m.uid === me.user ? 'mine' : 'others'} ${m.uid === 'naz_ai' ? 'is-naz' : ''} msg-anim`;
                     div.id = `msg-${sanitizeHTML(child.key)}`;
+                    div.dataset.msgId = child.key;
+                    messageRecordMap.set(child.key, m);
                     
                     // 🛡️ تنقية بيانات المستخدم قبل الإدراج في HTML
                     const safeName = sanitizeHTML(m.name);
@@ -1479,6 +1560,7 @@ if (new URLSearchParams(location.search).has('debug')) {
                     const isOwner = m.uid === 'reza';
                     const ownerBadge = isOwner ? '<span class="owner-badge"><i class="fas fa-crown"></i> المالك</span>' : '';
                     const pinnedBadge = m.isPinned ? '<span class="pinned-badge"><i class="fas fa-thumbtack"></i> مثبت</span>' : '';
+                    const assistantBadge = m.uid === 'naz_ai' ? '<span class="naz-assistant-badge"><i class="fas fa-sparkles"></i> مساعد</span>' : '';
                     
                     let content = '';
                     if ((m.pending && m.pending.kind === 'image') || (Array.isArray(m.imgs) && m.imgs.length)) {
@@ -1496,7 +1578,7 @@ if (new URLSearchParams(location.search).has('debug')) {
                     } else if (m.isImage) {
                         const safeImgUrl = sanitizeURL(m.txt) || '';
                         const safeImgAttr = sanitizeHTML(safeImgUrl);
-                        content = `<img src="${safeImgAttr}" class="bubble-image" onclick="openImageModal('${safeImgAttr}')" alt="صورة">`;
+                        content = `<img src="${safeImgAttr}" class="bubble-image is-loading" onclick="openImageModal('${safeImgAttr}')" onload="this.classList.remove('is-loading'); this.classList.add('is-loaded')" onerror="this.classList.remove('is-loading')" alt="صورة" dir="auto">`;
                         if (m.caption) content += `<div class="image-caption">${sanitizeHTML(m.caption)}</div>`;
                     } else if (m.file && m.file.content) {
                         fileRegistry.set(child.key, m.file);
@@ -1534,14 +1616,14 @@ if (new URLSearchParams(location.search).has('debug')) {
                         <div class="msg-header">
                             ${m.uid === me.user ? '' : `<img src="${safeAvatarAttr}" class="msg-avatar" alt="${safeName}" onclick="openUserAvatarModal('${safeAvatarAttr}')" onerror="this.src='${getDefaultAvatarUrl(safeUid)}'">`}
                             <div class="msg-sender-info">
-                                <span class="msg-name">${safeName} ${ownerBadge} ${pinnedBadge}</span>
+                                <span class="msg-name">${safeName} ${assistantBadge} ${ownerBadge} ${pinnedBadge}</span>
                                 <span class="msg-time">${formatTime(m.time)}</span>
                             </div>
                             ${m.uid === me.user ? `<img src="${safeAvatarAttr}" class="msg-avatar" alt="${safeName}" onclick="openUserAvatarModal('${safeAvatarAttr}')" onerror="this.src='${getDefaultAvatarUrl(safeUid)}'">` : ''}
                         </div>
                         <div class="bubble ${isBanned ? 'banned-msg' : ''} ${m.tool || m.themeProposal ? 'tool-bubble' : ''}" ${m.tool && TOOL_KINDS[m.tool.kind] || m.themeProposal ? '' : `onclick="openMenu('${sanitizeHTML(child.key)}', ${safeM})"`}>
                             ${m.reply ? replyPreview(m.reply) : ''}
-                            ${content}
+                            ${!m.tool && !m.themeProposal && !m.isImage && !m.file && !m.embed && !m.profile && !m.qr && !m.web && !m.results && !m.media && !m.imgs && !m.pending ? `<div class="message-text" dir="auto">${content}</div>` : content}
                         </div>
                         ${renderReactions(child.key, m.reactions)}
                     `;
@@ -1575,6 +1657,15 @@ if (new URLSearchParams(location.search).has('debug')) {
                 if (isInitialLoad) {
                     snap.forEach(child => processedAiMsgs.add(child.key));
                     isInitialLoad = false;
+                }
+                if (stayAtLatest) {
+                    knownMessageKeys = new Set(liveMessages.keys());
+                    clearNewMessageCount();
+                } else {
+                    liveMessages.forEach((message, key) => {
+                        if (!knownMessageKeys.has(key)) incrementNewMessageCount();
+                    });
+                    knownMessageKeys = new Set(liveMessages.keys());
                 }
                 
                 document.getElementById('stats-total-messages').textContent = msgCount;
@@ -1780,6 +1871,7 @@ if (new URLSearchParams(location.search).has('debug')) {
 
         let isUploadingMedia = false;
         const MAX_CHAT_MEDIA_BYTES = 20 * 1024 * 1024;
+        const MAX_COMPRESSIBLE_IMAGE_BYTES = 40 * 1024 * 1024;
         const CHAT_MEDIA_TYPES = new Set([
             'image/jpeg', 'image/png', 'image/gif', 'image/webp', 'image/avif', 'image/heic', 'image/heif',
             'video/mp4', 'video/webm', 'video/quicktime', 'video/3gpp', 'video/ogg'
@@ -1788,6 +1880,36 @@ if (new URLSearchParams(location.search).has('debug')) {
             jpg: 'image/jpeg', jpeg: 'image/jpeg', png: 'image/png', gif: 'image/gif', webp: 'image/webp', avif: 'image/avif', heic: 'image/heic', heif: 'image/heif',
             mp4: 'video/mp4', m4v: 'video/mp4', webm: 'video/webm', mov: 'video/quicktime', '3gp': 'video/3gpp', ogv: 'video/ogg'
         };
+        async function compressImageToWebp(file) {
+            if (!file.type.startsWith('image/') || file.type === 'image/gif' || /\.apng$/i.test(file.name || '')) return file;
+            let source, release = () => {};
+            try {
+                if (typeof createImageBitmap === 'function') {
+                    source = await createImageBitmap(file);
+                    release = () => source?.close?.();
+                } else {
+                    const objectUrl = URL.createObjectURL(file);
+                    source = await new Promise((resolve, reject) => {
+                        const image = new Image(); image.onload = () => resolve(image); image.onerror = reject; image.src = objectUrl;
+                    });
+                    release = () => URL.revokeObjectURL(objectUrl);
+                }
+                const scale = Math.min(1, 1920 / Math.max(source.width, source.height));
+                const canvas = document.createElement('canvas');
+                canvas.width = Math.max(1, Math.round(source.width * scale));
+                canvas.height = Math.max(1, Math.round(source.height * scale));
+                const context = canvas.getContext('2d', { alpha: true });
+                if (!context) return file;
+                context.drawImage(source, 0, 0, canvas.width, canvas.height);
+                const blob = await new Promise(resolve => canvas.toBlob(resolve, 'image/webp', .84));
+                if (!blob || blob.type !== 'image/webp' || blob.size >= file.size) return file;
+                const baseName = String(file.name || 'image').replace(/\.[^.]+$/, '') || 'image';
+                return new File([blob], `${baseName}.webp`, { type: 'image/webp', lastModified: Date.now() });
+            } catch (error) {
+                console.info('WebP compression unavailable; using original image:', error?.message || error);
+                return file;
+            } finally { release(); }
+        }
         window.sendImage = () => {
             if (!me) return showNotification('سجّل دخولك أولاً حتى ترسل ملف.');
             if (isUploadingMedia) return showNotification('انتظر اكتمال رفع الملف الحالي.');
@@ -1804,22 +1926,30 @@ if (new URLSearchParams(location.search).has('debug')) {
                 showNotification('صيغة الملف غير مدعومة؛ اختار صورة أو فيديو شائع.');
                 return;
             }
-            if (!file.size || file.size > MAX_CHAT_MEDIA_BYTES) {
-                showNotification('حجم الملف لازم يكون أقل من 20 ميغابايت.');
+            const isVideo = contentType.startsWith('video/');
+            if (!file.size || (isVideo && file.size > MAX_CHAT_MEDIA_BYTES) || (!isVideo && file.size > MAX_COMPRESSIBLE_IMAGE_BYTES)) {
+                showNotification(isVideo ? 'حجم الفيديو لازم يكون أقل من 20 ميغابايت.' : 'الصورة أكبر من الحد؛ اختار صورة أقل من 40 ميغابايت حتى نضغطها قبل الرفع.');
                 return;
             }
             const api = resolveCloudApiUrl();
             if (!api) return showNotification('خدمة رفع الملفات مو مضبوطة حالياً.');
             if (!/^[a-f0-9]{64}$/i.test(String(me.password || ''))) return showNotification('جلسة الحساب قديمة؛ سجّل خروج وادخل من جديد.');
-            const isVideo = contentType.startsWith('video/');
             isUploadingMedia = true;
-            showNotification(`جاري رفع ${isVideo ? 'الفيديو' : 'الصورة'}... 0%`);
             try {
+                let uploadFile = file;
+                let uploadType = contentType;
+                if (!isVideo) {
+                    showNotification('جاري ضغط الصورة بصيغة WebP…');
+                    uploadFile = await compressImageToWebp(file);
+                    uploadType = uploadFile.type || contentType;
+                }
+                if (!uploadFile.size || uploadFile.size > MAX_CHAT_MEDIA_BYTES) throw new Error('file_too_large');
+                showNotification(`جاري رفع ${isVideo ? 'الفيديو' : 'الصورة'}... 0%`);
                 const result = await new Promise((resolve, reject) => {
                     const xhr = new XMLHttpRequest();
                     let lastPercent = 0;
                     xhr.open('POST', api + '/upload');
-                    xhr.setRequestHeader('Content-Type', contentType);
+                    xhr.setRequestHeader('Content-Type', uploadType);
                     xhr.setRequestHeader('X-Chat-User', encodeURIComponent(me.user));
                     xhr.setRequestHeader('X-Chat-Proof', me.password);
                     xhr.upload.onprogress = event => {
@@ -1842,7 +1972,7 @@ if (new URLSearchParams(location.search).has('debug')) {
                         }
                         resolve(data);
                     };
-                    xhr.send(file);
+                    xhr.send(uploadFile);
                 });
                 const mediaUrl = sanitizeURL(result.url);
                 if (!mediaUrl || new URL(mediaUrl).origin !== new URL(api).origin) throw new Error('bad_upload_url');
@@ -3886,13 +4016,57 @@ ${memoryContext ? `ذاكرة المحادثة: استخدمي منها فقط �
             });
         });
 
+        let currentModalImageUrl = '';
         window.openImageModal = (src) => {
-            document.getElementById('modal-image').src = src;
+            const safeSrc = sanitizeURL(src);
+            if (!safeSrc) return;
+            currentModalImageUrl = safeSrc;
+            const image = document.getElementById('modal-image');
+            image.classList.remove('is-loaded');
+            image.classList.add('is-loading');
+            image.onload = () => { image.classList.remove('is-loading'); image.classList.add('is-loaded'); };
+            image.onerror = () => image.classList.remove('is-loading');
+            image.src = safeSrc;
             document.getElementById('image-modal').style.display = 'flex';
         };
 
         window.closeImageModal = () => {
             document.getElementById('image-modal').style.display = 'none';
+        };
+        window.downloadCurrentImage = async () => {
+            if (!currentModalImageUrl) return;
+            try {
+                const response = await fetch(currentModalImageUrl, { mode: 'cors' });
+                if (!response.ok) throw new Error('download failed');
+                const blob = await response.blob();
+                const url = URL.createObjectURL(blob);
+                const link = document.createElement('a');
+                link.href = url;
+                link.download = `reza-chat-${Date.now()}.${(blob.type.split('/')[1] || 'jpg').replace('jpeg', 'jpg')}`;
+                document.body.appendChild(link); link.click(); link.remove();
+                setTimeout(() => URL.revokeObjectURL(url), 1500);
+            } catch {
+                const link = document.createElement('a');
+                link.href = currentModalImageUrl; link.download = 'reza-chat-image'; link.target = '_blank'; link.rel = 'noopener';
+                document.body.appendChild(link); link.click(); link.remove();
+            }
+        };
+        window.shareCurrentImage = async () => {
+            if (!currentModalImageUrl) return;
+            try {
+                if (navigator.share) {
+                    const response = await fetch(currentModalImageUrl, { mode: 'cors' });
+                    const blob = await response.blob();
+                    const file = new File([blob], 'reza-chat-image.' + ((blob.type.split('/')[1] || 'jpg').replace('jpeg', 'jpg')), { type: blob.type || 'image/jpeg' });
+                    if (!navigator.canShare || navigator.canShare({ files: [file] })) await navigator.share({ files: [file], title: 'صورة من REZA CHAT' });
+                    else await navigator.share({ title: 'صورة من REZA CHAT', url: currentModalImageUrl });
+                } else {
+                    await navigator.clipboard.writeText(currentModalImageUrl);
+                    showNotification('نسخت رابط الصورة للمشاركة.');
+                }
+            } catch (error) {
+                if (error?.name !== 'AbortError') showNotification('تعذرت المشاركة؛ استخدم تنزيل الصورة.');
+            }
         };
 
         // فتح صورة الملف الشخصي في المودال
@@ -3934,6 +4108,36 @@ ${memoryContext ? `ذاكرة المحادثة: استخدمي منها فقط �
         const messageInput = document.getElementById('msg-input');
         const mentionSuggestions = document.getElementById('mention-suggestions');
         const mentionItems = Array.from(mentionSuggestions?.querySelectorAll('[data-mention-value]') || []);
+        const composerPlusButton = document.getElementById('composer-plus-btn');
+        const composerPlusMenu = document.getElementById('composer-plus-menu');
+        const toggleComposerPlus = (open = !composerPlusMenu?.classList.contains('is-open')) => {
+            if (!composerPlusButton || !composerPlusMenu) return;
+            composerPlusMenu.classList.toggle('is-open', open);
+            composerPlusMenu.inert = !open;
+            composerPlusMenu.setAttribute('aria-hidden', String(!open));
+            composerPlusButton.setAttribute('aria-expanded', String(open));
+        };
+        composerPlusButton?.addEventListener('click', () => toggleComposerPlus());
+        composerPlusMenu?.querySelectorAll('[data-composer-template]').forEach(button => button.addEventListener('click', () => {
+            const template = button.dataset.composerTemplate || '';
+            const start = messageInput.selectionStart ?? messageInput.value.length;
+            const end = messageInput.selectionEnd ?? start;
+            const before = messageInput.value.slice(0, start);
+            const after = messageInput.value.slice(end);
+            const needsGap = before && !/\s$/u.test(before) ? ' ' : '';
+            messageInput.value = before + needsGap + template + after;
+            const cursor = (before + needsGap + template).length;
+            messageInput.focus(); messageInput.setSelectionRange(cursor, cursor);
+            toggleComposerPlus(false);
+            mentionSuggestions && (mentionSuggestions.hidden = true);
+            messageInput.dispatchEvent(new Event('input', { bubbles: true }));
+        }));
+        document.addEventListener('pointerdown', event => {
+            if (!event.target.closest('.composer-plus-wrap')) toggleComposerPlus(false);
+        });
+        messageInput?.addEventListener('keydown', event => {
+            if (event.key === 'Escape' && composerPlusMenu?.classList.contains('is-open')) { toggleComposerPlus(false); composerPlusButton?.focus(); }
+        });
         const updateMentionSuggestions = () => {
             if (!messageInput || !mentionSuggestions) return;
             const cursor = messageInput.selectionStart ?? messageInput.value.length;
@@ -4043,20 +4247,23 @@ ${memoryContext ? `ذاكرة المحادثة: استخدمي منها فقط �
                     snap.forEach(child => {
                         const t = child.val();
                         if (child.key !== me.user && t.time && (now - t.time) < 5000) {
-                            typingUsers.push(t.name);
+                            typingUsers.push({ name: String(t.name || 'عضو'), naz: child.key === 'naz_ai' || String(t.name || '') === String(dbAiConfig?.name || 'NAZ Ai') });
                         }
                     });
                 }
                 if (typingUsers.length > 0) {
                     indicator.style.display = 'flex';
-                    const nameText = typingUsers.length === 1 ? typingUsers[0] : typingUsers.slice(0, 2).join(' و ');
+                    const nazTyping = typingUsers.some(user => user.naz);
+                    indicator.classList.toggle('is-naz', nazTyping);
+                    const nameText = nazTyping ? 'NAZ' : typingUsers.length === 1 ? typingUsers[0].name : typingUsers.slice(0, 2).map(user => user.name).join(' و ');
                     const status = indicator.querySelector('span');
                     const safeName = document.createElement('span');
                     safeName.className = 'typing-name';
                     safeName.textContent = nameText;
-                    status.replaceChildren(safeName, document.createTextNode(typingUsers.length === 1 ? ' يكتب' : ' يكتبون'));
+                    status.replaceChildren(safeName, document.createTextNode(nazTyping ? ' يكتب…' : typingUsers.length === 1 ? ' يكتب' : ' يكتبون'));
                 } else {
                     indicator.style.display = 'none';
+                    indicator.classList.remove('is-naz');
                 }
             }, () => {});
         }
