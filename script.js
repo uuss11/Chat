@@ -669,6 +669,8 @@ if (new URLSearchParams(location.search).has('debug')) {
         let messagesStarted = false;
         let olderLoadArmed = true;
         let userScrolledSinceEntry = false;
+        let userInteractedWithFlow = false;
+        let initialPinDone = false;
         let currentTheme = 'calm';
         let customThemes = {};
         const BUILTIN_THEMES = [
@@ -1504,6 +1506,12 @@ if (new URLSearchParams(location.search).has('debug')) {
         }, true);
 
         function startChat() {
+            messagePageSize = MESSAGE_PAGE_SIZE;
+            noMoreOlderMessages = false;
+            olderLoadArmed = true;
+            userScrolledSinceEntry = false;
+            userInteractedWithFlow = false;
+            initialPinDone = false;
             // مراقبة الكتابة
             startTypingListener();
             onValue(ref(db, 'themes'), snap => {
@@ -1707,6 +1715,7 @@ if (new URLSearchParams(location.search).has('debug')) {
                             if (!userScrolledSinceEntry) flow.scrollTop = flow.scrollHeight;
                         };
                         [0, 120, 400, 900, 1600, 2600].forEach(delay => setTimeout(pinToBottom, delay));
+                        setTimeout(() => { initialPinDone = true; }, 2700);
                     }
                 }
                 flow.classList.toggle('is-loading-older', loadingOlderMessages);
@@ -1719,11 +1728,8 @@ if (new URLSearchParams(location.search).has('debug')) {
             messagesStarted = true;
             const requestOlderMessages = () => {
                 const activeFlow = document.getElementById('chat-flow');
-                if (activeFlow) {
-                    const distance = activeFlow.scrollHeight - activeFlow.clientHeight - activeFlow.scrollTop;
-                    if (distance > 220) userScrolledSinceEntry = true;
-                    if (activeFlow.scrollTop > 420) olderLoadArmed = true;
-                }
+                if (activeFlow && userInteractedWithFlow && activeFlow.scrollTop > 420) olderLoadArmed = true;
+                if (!userInteractedWithFlow || !initialPinDone) return;
                 if (loadingOlderMessages || noMoreOlderMessages || !messagesStarted || !olderLoadArmed) return;
                 const flow = document.getElementById('chat-flow');
                 if (!flow || flow.scrollHeight <= flow.clientHeight + 40 || flow.scrollTop > 140) return;
@@ -1741,6 +1747,13 @@ if (new URLSearchParams(location.search).has('debug')) {
                 }, 900);
             };
             chatFlowElement?.addEventListener('scroll', requestOlderMessages, { passive: true });
+            const markFlowInteraction = () => {
+                userInteractedWithFlow = true;
+                userScrolledSinceEntry = true;
+            };
+            chatFlowElement?.addEventListener('wheel', markFlowInteraction, { passive: true });
+            chatFlowElement?.addEventListener('touchmove', markFlowInteraction, { passive: true });
+            chatFlowElement?.addEventListener('keydown', markFlowInteraction);
             chatFlowElement?.addEventListener('load', event => {
                 if (userScrolledSinceEntry || !(event.target instanceof HTMLImageElement)) return;
                 chatFlowElement.scrollTop = chatFlowElement.scrollHeight;
