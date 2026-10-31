@@ -311,13 +311,19 @@ if (new URLSearchParams(location.search).has('debug')) {
             if (!source) return plan;
             let catalog = openRouterModelsCache;
             try {
-                if (!catalog) catalog = await getOpenRouterModelCatalog();
+                if (!catalog) {
+                    catalog = await Promise.race([
+                        getOpenRouterModelCatalog(),
+                        new Promise(resolve => setTimeout(() => resolve(null), 6000))
+                    ]);
+                }
             } catch (error) {
                 console.warn('Prompt polish skipped; model catalog unavailable:', error?.message || error);
                 return plan;
             }
             const freeModelIds = new Set((catalog || []).filter(model => model && model.isFree).map(model => String(model.id || '')));
-            const models = getModelChain().filter(model => model !== 'openrouter/auto' && freeModelIds.has(model));
+            const instructionModels = getModelChain().filter(model => model !== 'openrouter/auto' && freeModelIds.has(model));
+            const models = [...new Set([...instructionModels, ...getModelChain().filter(model => model !== 'openrouter/auto')])].slice(0, 6);
             if (!models.length) return plan;
             const instruction = `You prepare prompts for a text-to-image model. The user request is written in Arabic, English or a mix.
 
