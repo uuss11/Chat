@@ -1121,7 +1121,13 @@ button:focus-visible, [role="button"]:focus-visible, a:focus-visible, input:focu
 
 /* ===== تحسينات الواجهة والتطبيق المثبت ===== */
 :root { --chat-viewport-height: 100dvh; }
-*, *::before, *::after { font-family: 'Tajawal', 'Cairo', sans-serif; }
+body, button, input, select, textarea, .bubble, .msg-name, .msg-time, .tool-caption { font-family: 'Tajawal', 'Cairo', sans-serif; }
+/* حماية خط الأيقونات: لا تلمس font-family لعناصر Font Awesome أو أبنائها الزائفين */
+i[class*="fa-"], span[class*="fa-"], .fa, .fas, .far, .fal, .fat, .fad,
+i[class*="fa-"]::before, span[class*="fa-"]::before, .fa::before, .fas::before, .far::before, .fal::before, .fat::before, .fad::before {
+    font-family: "Font Awesome 6 Free" !important;
+}
+.fab, .fa-brands, .fab::before, .fa-brands::before { font-family: "Font Awesome 6 Brands" !important; }
 body { line-height: 1.7; }
 .app-container { height: 100vh; height: var(--chat-viewport-height, 100dvh); min-height: 0; }
 .footer-bar { padding-bottom: max(10px, env(safe-area-inset-bottom)); }
@@ -1153,11 +1159,11 @@ body { line-height: 1.7; }
 .image-modal-actions { position: absolute; top: max(20px, env(safe-area-inset-top)); left: 20px; display: flex; gap: 9px; }
 .image-modal-actions button { width: 42px; height: 42px; border: 1px solid rgba(255,255,255,.2); border-radius: 14px; background: rgba(20,24,30,.82); color: #fff; cursor: pointer; }
 .image-modal-actions button:hover { background: var(--primary); color: #101719; }
-.ai-gen-grid { grid-template-columns: repeat(2,minmax(0,1fr)); }
+.ai-gen-grid.multi { grid-template-columns: repeat(2,minmax(0,1fr)); }
+.ai-gen-grid:not(.multi) { grid-template-columns: 1fr; }
 .ai-gen-item img, .bubble-image { filter: blur(12px); transform: scale(1.015); background: rgba(255,255,255,.05); transition: filter .25s ease, transform .25s ease; }
 .ai-gen-item img.is-loaded, .bubble-image.is-loaded { filter: none; transform: none; }
 .ai-gen-item img.is-broken { display: none; }
-@media (max-width: 520px) { .ai-gen-grid.multi { grid-template-columns: repeat(2,minmax(0,1fr)); } }
 @media (max-width: 360px) { .ai-gen-grid.multi { grid-template-columns: 1fr; } .auth-feature-strip span { font-size: .61rem; } }
 .context-overlay { align-items: flex-end; }
 .context-menu { width: min(420px,100%); border-radius: 20px 20px 0 0; padding-bottom: max(10px, env(safe-area-inset-bottom)); }
