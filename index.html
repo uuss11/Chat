@@ -15,7 +15,7 @@
     <title>REZA | Ultra Chat Experience</title>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     <link href="https://fonts.googleapis.com/css2?family=Cairo:wght@300;400;500;600;700;800&family=Tajawal:wght@400;500;600;700;800&display=swap" rel="stylesheet">
-    <link rel="stylesheet" href="style.css?v=44">
+    <link rel="stylesheet" href="style.css?v=45">
 </head>
 <body data-theme="calm">
     <div class="bg-container"></div>
@@ -186,6 +186,7 @@
         <div class="main-content">
             <div class="chat-flow-wrap" style="position: relative; flex: 1; display: flex; flex-direction: column; min-width: 0; min-height: 0;">
                 <div id="chat-flow"></div>
+                <div class="older-messages-loader" id="older-messages-loader" hidden><span class="older-loader-dot"></span><span class="older-loader-dot"></span><span class="older-loader-dot"></span></div>
                 <button type="button" class="scroll-latest-btn" id="scroll-latest-btn" aria-label="الانتقال إلى آخر رسالة" title="آخر رسالة" aria-hidden="true"><i class="fas fa-arrow-down" aria-hidden="true"></i><span class="scroll-latest-count" id="scroll-latest-count" hidden></span></button>
                 <div class="typing-indicator" id="typing-indicator">
                     <span>يكتب</span>
@@ -398,6 +399,6 @@
     </div>
 
     <script src="cloud-config.js?v=34"></script>
-    <script type="module" src="script.js?v=52"></script>
+    <script type="module" src="script.js?v=54"></script>
 </body>
 </html>

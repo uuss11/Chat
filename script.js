@@ -660,6 +660,13 @@ if (new URLSearchParams(location.search).has('debug')) {
         let aiModelSearchTimer = null;
         let aiModelSearchSequence = 0;
         let isInitialLoad = true;
+        const MESSAGE_PAGE_SIZE = 20;
+        let messagePageSize = MESSAGE_PAGE_SIZE;
+        let messagesUnsubscribe = null;
+        let loadingOlderMessages = false;
+        let noMoreOlderMessages = false;
+        let pendingScrollRestore = null;
+        let messagesStarted = false;
         let currentTheme = 'calm';
         let customThemes = {};
         const BUILTIN_THEMES = [
@@ -1508,13 +1515,17 @@ if (new URLSearchParams(location.search).has('debug')) {
                 if (currentTheme.startsWith('naz-') && customThemes[currentTheme]) applyTheme(currentTheme, false);
             }, error => console.warn('Custom theme catalog unavailable:', error));
             
-            // مراقبة الرسائل (آخر 250 رسالة)
-            onValue(query(ref(db, 'messages'), limitToLast(250)), async snap => {
+            // مراقبة الرسائل: 20 رسالة أولاً، ثم تُوسَّع الصفحة عند التمرير للأعلى
+            const subscribeToMessages = () => {
+                if (messagesUnsubscribe) { messagesUnsubscribe(); messagesUnsubscribe = null; }
+                messagesUnsubscribe = onValue(query(ref(db, 'messages'), limitToLast(messagePageSize)), async snap => {
                 const renderSequence = ++messageRenderSequence;
                 const flow = document.getElementById('chat-flow');
+                const isFirstRender = isInitialLoad;
                 const stayAtLatest = flow.scrollHeight - flow.scrollTop - flow.clientHeight <= 120;
                 const liveMessages = new Map();
                 snap.forEach(child => liveMessages.set(child.key, child.val()));
+                if (snap.size < messagePageSize) noMoreOlderMessages = true;
                 const replyPreview = reply => {
                     const source = reply?.messageId ? liveMessages.get(reply.messageId) : null;
                     const deleted = Boolean(reply?.messageId && source?.deleted);
@@ -1543,7 +1554,9 @@ if (new URLSearchParams(location.search).has('debug')) {
                     
                     const userStatus = allUsers[m.uid] || {};
                     const isBanned = userStatus.isBanned;
-                    const rawAvatar = userStatus.avatar || m.avatar || getDefaultAvatarUrl(m.uid);
+                    // NAZ يستخدم الصورة التي ضبطها المالك في إعداداته، لا صورة API العشوائية
+                    const configuredNazAvatar = m.uid === 'naz_ai' ? sanitizeURL(dbAiConfig?.avatar || '') : '';
+                    const rawAvatar = configuredNazAvatar || userStatus.avatar || m.avatar || getDefaultAvatarUrl(m.uid);
                     const userAvatar = sanitizeURL(rawAvatar) || getDefaultAvatarUrl(sanitizeHTML(m.uid));
                     
                     const div = document.createElement('div');
@@ -1682,11 +1695,43 @@ if (new URLSearchParams(location.search).has('debug')) {
                         void runToolAction(msgKey, 'custom', { fields: {}, stroke, strokeKey: key });
                     }
                 });
-                if (stayAtLatest) flow.scrollTop = flow.scrollHeight;
+                if (pendingScrollRestore) {
+                    flow.scrollTop = Math.max(0, flow.scrollHeight - pendingScrollRestore.fromBottom);
+                    pendingScrollRestore = null;
+                } else if (stayAtLatest) {
+                    flow.scrollTop = flow.scrollHeight;
+                    if (isFirstRender) {
+                        const pinToBottom = () => {
+                            if (flow.scrollHeight - flow.scrollTop - flow.clientHeight <= 400) flow.scrollTop = flow.scrollHeight;
+                        };
+                        [120, 400, 900, 1600].forEach(delay => setTimeout(pinToBottom, delay));
+                    }
+                }
+                flow.classList.toggle('is-loading-older', loadingOlderMessages);
                 requestAnimationFrame(updateScrollLatestButton);
             }, (error) => {
                 console.error('Messages listener error:', error);
             });
+            };
+            subscribeToMessages();
+            messagesStarted = true;
+            const requestOlderMessages = () => {
+                if (loadingOlderMessages || noMoreOlderMessages || !messagesStarted) return;
+                const flow = document.getElementById('chat-flow');
+                if (!flow || flow.scrollHeight <= flow.clientHeight + 40 || flow.scrollTop > 140) return;
+                loadingOlderMessages = true;
+                pendingScrollRestore = { fromBottom: flow.scrollHeight - flow.scrollTop };
+                messagePageSize += MESSAGE_PAGE_SIZE;
+                const loader = document.getElementById('older-messages-loader');
+                if (loader) loader.hidden = false;
+                subscribeToMessages();
+                setTimeout(() => {
+                    loadingOlderMessages = false;
+                    const nextLoader = document.getElementById('older-messages-loader');
+                    if (nextLoader) nextLoader.hidden = true;
+                }, 900);
+            };
+            chatFlowElement?.addEventListener('scroll', requestOlderMessages, { passive: true });
 
             // مراقبة الرسائل المثبتة
             onValue(ref(db, 'pinnedMessage'), snap => {
