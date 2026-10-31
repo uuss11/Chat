@@ -667,6 +667,8 @@ if (new URLSearchParams(location.search).has('debug')) {
         let noMoreOlderMessages = false;
         let pendingScrollRestore = null;
         let messagesStarted = false;
+        let olderLoadArmed = true;
+        let userScrolledSinceEntry = false;
         let currentTheme = 'calm';
         let customThemes = {};
         const BUILTIN_THEMES = [
@@ -1702,9 +1704,9 @@ if (new URLSearchParams(location.search).has('debug')) {
                     flow.scrollTop = flow.scrollHeight;
                     if (isFirstRender) {
                         const pinToBottom = () => {
-                            if (flow.scrollHeight - flow.scrollTop - flow.clientHeight <= 400) flow.scrollTop = flow.scrollHeight;
+                            if (!userScrolledSinceEntry) flow.scrollTop = flow.scrollHeight;
                         };
-                        [120, 400, 900, 1600].forEach(delay => setTimeout(pinToBottom, delay));
+                        [0, 120, 400, 900, 1600, 2600].forEach(delay => setTimeout(pinToBottom, delay));
                     }
                 }
                 flow.classList.toggle('is-loading-older', loadingOlderMessages);
@@ -1716,10 +1718,17 @@ if (new URLSearchParams(location.search).has('debug')) {
             subscribeToMessages();
             messagesStarted = true;
             const requestOlderMessages = () => {
-                if (loadingOlderMessages || noMoreOlderMessages || !messagesStarted) return;
+                const activeFlow = document.getElementById('chat-flow');
+                if (activeFlow) {
+                    const distance = activeFlow.scrollHeight - activeFlow.clientHeight - activeFlow.scrollTop;
+                    if (distance > 220) userScrolledSinceEntry = true;
+                    if (activeFlow.scrollTop > 420) olderLoadArmed = true;
+                }
+                if (loadingOlderMessages || noMoreOlderMessages || !messagesStarted || !olderLoadArmed) return;
                 const flow = document.getElementById('chat-flow');
                 if (!flow || flow.scrollHeight <= flow.clientHeight + 40 || flow.scrollTop > 140) return;
                 loadingOlderMessages = true;
+                olderLoadArmed = false;
                 pendingScrollRestore = { fromBottom: flow.scrollHeight - flow.scrollTop };
                 messagePageSize += MESSAGE_PAGE_SIZE;
                 const loader = document.getElementById('older-messages-loader');
@@ -1732,6 +1741,10 @@ if (new URLSearchParams(location.search).has('debug')) {
                 }, 900);
             };
             chatFlowElement?.addEventListener('scroll', requestOlderMessages, { passive: true });
+            chatFlowElement?.addEventListener('load', event => {
+                if (userScrolledSinceEntry || !(event.target instanceof HTMLImageElement)) return;
+                chatFlowElement.scrollTop = chatFlowElement.scrollHeight;
+            }, true);
 
             // مراقبة الرسائل المثبتة
             onValue(ref(db, 'pinnedMessage'), snap => {
