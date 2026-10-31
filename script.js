@@ -314,7 +314,7 @@ if (new URLSearchParams(location.search).has('debug')) {
                 if (!catalog) {
                     catalog = await Promise.race([
                         getOpenRouterModelCatalog(),
-                        new Promise(resolve => setTimeout(() => resolve(null), 6000))
+                        new Promise(resolve => setTimeout(() => resolve(null), 4000))
                     ]);
                 }
             } catch (error) {
@@ -339,10 +339,20 @@ RULES
 USER REQUEST:
 ${source}`;
             try {
-                const completion = await callOpenRouter([{ role: 'user', content: instruction }], { maxTokens: 450, json: true, models });
+                const completion = await callOpenRouter([{ role: 'user', content: instruction }], { maxTokens: 450, json: true, models: models.slice(0, 4) });
                 const text = String(completion?.text || '').trim();
+                let parsed = null;
                 const jsonMatch = text.match(/\{[\s\S]*\}/);
-                const parsed = jsonMatch ? JSON.parse(jsonMatch[0]) : null;
+                if (jsonMatch) {
+                    try {
+                        parsed = JSON.parse(jsonMatch[0]);
+                    } catch (parseError) {
+                        // نماذج مجانية تكتب اقتباسات داخل النص فتكسّر JSON — نستخرج الحقول يدوياً
+                        const promptField = jsonMatch[0].match(/"prompt"\s*:\s*"([\s\S]*?)"\s*,\s*"count"/);
+                        const countField = jsonMatch[0].match(/"count"\s*:\s*(\d{1,2})/);
+                        parsed = { prompt: promptField ? promptField[1].replace(/\\"/g, '"').replace(/\\n/g, ' ') : '', count: countField ? countField[1] : null };
+                    }
+                }
                 const prompt = String(parsed?.prompt || '').replace(/\s+/g, ' ').trim();
                 const modelCount = Number(parsed?.count);
                 if (prompt.length >= 8 && !/[\u0600-\u06FF]/u.test(prompt)) {
