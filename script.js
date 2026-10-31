@@ -214,13 +214,19 @@ if (new URLSearchParams(location.search).has('debug')) {
 
         function detectDrawRequest(text) {
             const value = String(text || '').trim();
-            if (!value || value.length > 300) return null;
+            if (!value || value.length > 1600) return null;
             const strong = DRAW_STRONG.test(value);
             const weak = DRAW_WEAK.test(value) && DRAW_NOUN.test(value);
             const mention = DRAW_MENTION.test(value);
             if (!strong && !weak && !mention) return null;
             const countWords = { صورتين: 2, صورتان: 2, اثنين: 2, اثنتين: 2, ثلاث: 3, ثلاثة: 3, ثلاثه: 3, اربع: 4, أربع: 4, اربعة: 4, أربعة: 4, اربعه: 4, خمسة: 5, خمسه: 5, خمس: 5, ستة: 6, سته: 6, ست: 6, سبعة: 7, سبعه: 7, سبع: 7, ثمانية: 8, ثمانيه: 8, ثمان: 8, تسعة: 9, تسعه: 9, تسع: 9, عشرة: 10, عشر: 10 };
-            const countMatch = value.match(/(?:^|[\s،,])([0-9٠-٩]{1,2}|صورتين|صورتان|اثنين|اثنتين|ثلاث|ثلاثة|ثلاثه|اربع|أربع|اربعة|أربعة|اربعه|خمسة|خمسه|خمس|ستة|سته|ست|سبعة|سبعه|سبع|ثمانية|ثمانيه|ثمان|تسعة|تسعه|تسع|عشرة|عشر)\s*(?:نتائج?|نتايج|صور?|صورة|مرات)?/iu);
+            const numberWords = 'صورتين|صورتان|اثنين|اثنتين|ثلاث|ثلاثة|ثلاثه|اربع|أربع|اربعة|أربعة|اربعه|خمسة|خمسه|خمس|ستة|سته|ست|سبعة|سبعه|سبع|ثمانية|ثمانيه|ثمان|تسعة|تسعه|تسع|عشرة|عشر';
+            // أولاً: عدد صريح مرتبط بكلمة صور/نتائج (عربي أو إنجليزي، مع كلمات وصف بينهما)
+            const explicitCount = value.match(new RegExp(`(?:^|[\\s،,])([0-9٠-٩]{1,2}|${numberWords})(?:\\s+(?:[A-Za-z]+|[\\u0600-\\u06FF]+)){0,2}\\s*(?:نتائج?|نتايج|صور(?:ة|تين|تان)?|مرات|images?|pictures?|photos?|thumbnails?|results?|pics?)`, 'iu'));
+            // ثانياً: فعل إنشاء متبوع برقم
+            const verbCount = value.match(/(?:create|generate|make|draw|produce|انشئ|أنشئ|انشأ|سوي|سوّي|اعمل|اصنع|ارسم|ولّد|صمم)\s+([0-9٠-٩]{1,2})\b/iu);
+            const bareCount = value.match(new RegExp(`(?:^|[\\s،,])([0-9٠-٩]{1,2}|${numberWords})\\s*(?:نتائج?|نتايج|صور(?:ة|تين|تان)?|مرات)?`, 'iu'));
+            const countMatch = explicitCount || verbCount || bareCount;
             let count = 1;
             if (countMatch) {
                 const rawCount = countMatch[1];
@@ -229,8 +235,15 @@ if (new URLSearchParams(location.search).has('debug')) {
                 count = Math.max(1, Math.min(10, count));
             }
             const promptSource = countMatch ? value.replace(countMatch[0], ' ') : value;
-            const prompt = stripDrawTokens(promptSource).slice(0, 300);
-            return { prompt: prompt, count: count, raw: value.slice(0, 200) };
+            const prompt = stripDrawTokens(promptSource)
+                .replace(/\b(?:generate|create|make|produce|draw)\s+\d{1,2}\s+(?:separate\s+|different\s+|unique\s+|individual\s+)?(?:images?|pictures?|photos?|thumbnails?|pics?)\b/gi, ' ')
+                .replace(/\b\d{1,2}\s+(?:separate\s+|different\s+|unique\s+|individual\s+)?(?:images?|pictures?|photos?|thumbnails?|pics?)\b/gi, ' ')
+                .replace(/(?:انشئ|أنشئ|ارسم|سوي|اعمل|اصنع)\s*\d{1,2}\s*(?:صور(?:ة|تين|تان)?|نتائج?|نتايج)?/gu, ' ')
+                .replace(/\s+([.,;:!?])/g, '$1')
+                .replace(/\s{2,}/g, ' ')
+                .trim()
+                .slice(0, 1200);
+            return { prompt: prompt, count: count, raw: value.slice(0, 300) };
         }
 
         async function translateImagePromptToEnglish(prompt) {
@@ -246,7 +259,7 @@ if (new URLSearchParams(location.search).has('debug')) {
             const freeModelIds = new Set((catalog || []).filter(model => model && model.isFree).map(model => String(model.id || '')));
             const translationModels = getModelChain().filter(model => model !== 'openrouter/auto' && freeModelIds.has(model));
             if (!translationModels.length) throw new Error('translation_failed');
-            const instruction = `Translate the following image description from Arabic to clear, natural English suitable for an AI image generator. Preserve every requested subject, action, style, composition, colors, lighting, setting, and constraints. Do not add details that were not requested. Output only the translated English prompt, with no explanation or quotation marks.\n\nArabic description:\n${original}`;
+            const instruction = `Translate the following image description from Arabic to clear, natural English suitable for an AI image generator. Preserve every requested subject, action, style, composition, colors, lighting, setting, and constraints. Do not add details that were not requested. Keep any text that must appear inside the image inside double quotes. Output only the translated English prompt, with no explanation or quotation marks around the whole prompt.\n\nArabic description:\n${original}`;
             let completion;
             try {
                 completion = await callOpenRouter([{ role: 'user', content: instruction }], { maxTokens: 220, models: translationModels });
@@ -265,6 +278,79 @@ if (new URLSearchParams(location.search).has('debug')) {
             return translated;
         }
 
+        // يحوّل طلب المستخدم الخام إلى برومبت إنجليزي مرتّب + عدد الصور المطلوب (ناز = OpenRouter).
+        const IMAGE_TEXT_VERB = /\b(text|typography|caption|headline|logo|title|says?|reading|written|words?|font|lettering|poster|thumbnail|banner|sticker|label)\b/i;
+        function extractQuotedTexts(value) {
+            const out = [];
+            const pattern = /(?:["“”«»]|\u201c|\u201d)([^"“”«»\n]{1,80})(?:["“”«»]|\u201c|\u201d)/g;
+            let match;
+            while ((match = pattern.exec(String(value || ''))) && out.length < 4) {
+                const text = String(match[1] || '').trim();
+                if (text && text.length >= 2 && !out.includes(text)) out.push(text);
+            }
+            return out;
+        }
+        function polishImagePromptLocally(text, count) {
+            const quoted = extractQuotedTexts(text);
+            let prompt = String(text || '').replace(/\s+/g, ' ').trim();
+            prompt = prompt.replace(/\b(?:generate|create|make|produce|draw)\s+\d{1,2}\s+(?:separate\s+|different\s+|unique\s+|individual\s+)?(?:images?|pictures?|photos?|thumbnails?|pics?)\b/gi, ' ');
+            prompt = prompt.replace(/\b\d{1,2}\s+(?:separate\s+|different\s+|unique\s+|individual\s+)?(?:images?|pictures?|photos?|thumbnails?|pics?)\b/gi, ' ');
+            prompt = prompt.replace(/(?:انشئ|أنشئ|ارسم|سوي|اعمل|اصنع)\s*\d{1,2}\s*(?:صور(?:ة|تين|تان)?|نتائج?|نتايج)?/gu, ' ');
+            prompt = prompt.replace(/\s*,\s*,+/g, ',').replace(/\s+([.,;:!?])/g, '$1').replace(/\s{2,}/g, ' ').trim();
+            if (quoted.length) {
+                const labels = quoted.slice(0, 3).map(item => `"${item}"`).join(' and ');
+                prompt = `${prompt} Render the on-image text ${labels} as bold, crisp, highly legible typography integrated into the artwork.`;
+            } else if (IMAGE_TEXT_VERB.test(prompt)) {
+                prompt += ' Render any on-image text as bold, crisp, highly legible typography integrated into the artwork.';
+            }
+            return prompt.slice(0, 700);
+        }
+        async function buildImagePromptPlan(rawText, fallbackPrompt, fallbackCount) {
+            const source = String(rawText || '').replace(/\s+/g, ' ').trim().slice(0, 1200);
+            const plan = { prompt: polishImagePromptLocally(fallbackPrompt || source, fallbackCount), count: fallbackCount || 1, improved: false };
+            if (!source) return plan;
+            let catalog = openRouterModelsCache;
+            try {
+                if (!catalog) catalog = await getOpenRouterModelCatalog();
+            } catch (error) {
+                console.warn('Prompt polish skipped; model catalog unavailable:', error?.message || error);
+                return plan;
+            }
+            const freeModelIds = new Set((catalog || []).filter(model => model && model.isFree).map(model => String(model.id || '')));
+            const models = getModelChain().filter(model => model !== 'openrouter/auto' && freeModelIds.has(model));
+            if (!models.length) return plan;
+            const instruction = `You prepare prompts for a text-to-image model. The user request is written in Arabic, English or a mix.
+
+RULES
+1. Return ONE English image prompt for a SINGLE image, at most 500 characters.
+2. Keep the visual subject, style, colors, mood and every negative constraint the user asked for.
+3. NEVER describe a collage, grid, contact sheet or multiple panels; the app generates each image separately.
+4. Remove the generation count from the prompt. If the user asks for several images, keep the variations described as a general idea.
+5. Any words that must literally appear inside the artwork go inside double quotes, e.g. "LEVEL 0 TO MAX".
+6. Read the requested number of images: digits, Arabic words (صورتين، ثلاث صور، خمس نتائج…) or English words. Default 1, maximum 10.
+7. Output JSON only, no markdown: {"prompt":"...","count":1}
+
+USER REQUEST:
+${source}`;
+            try {
+                const completion = await callOpenRouter([{ role: 'user', content: instruction }], { maxTokens: 450, json: true, models });
+                const text = String(completion?.text || '').trim();
+                const jsonMatch = text.match(/\{[\s\S]*\}/);
+                const parsed = jsonMatch ? JSON.parse(jsonMatch[0]) : null;
+                const prompt = String(parsed?.prompt || '').replace(/\s+/g, ' ').trim();
+                const modelCount = Number(parsed?.count);
+                if (prompt.length >= 8 && !/[\u0600-\u06FF]/u.test(prompt)) {
+                    plan.prompt = prompt.slice(0, 700);
+                    plan.improved = true;
+                }
+                if (Number.isFinite(modelCount) && modelCount >= 1) {
+                    plan.count = Math.max(1, Math.min(10, Math.round(modelCount)));
+                }
+            } catch (error) {
+                console.warn('Prompt polish failed; using raw prompt:', error?.message || error);
+            }
+            return plan;
+        }
         function renderImageGenCard(m) {
             const pending = m.pending && m.pending.kind === 'image' ? m.pending : null;
             const imgs = Array.isArray(m.imgs) ? m.imgs.filter(u => /^https?:/.test(String(u))).slice(0, 10) : [];
@@ -284,7 +370,7 @@ if (new URLSearchParams(location.search).has('debug')) {
                     <div class="ai-gen-brush"><i class="fas fa-paintbrush"></i></div>
                 </div>
                 <div class="ai-gen-waves"><span></span><span></span><span></span><span></span><span></span><span></span></div>
-                <div class="ai-gen-status"><span class="s1">${pending.stage === 'translate' ? 'ناز تترجم الوصف للإنجليزية 🌐' : 'ناز تفتح لوحة الرسم 🎨'}</span><span class="s2">تخلط الألوان…</span><span class="s3">ترسم التفاصيل ✨</span></div>
+                <div class="ai-gen-status"><span class="s1">${pending.stage === 'prompt' || pending.stage === 'translate' ? 'ناز ترتّب الوصف وتترجمه 🌐' : 'ناز تفتح لوحة الرسم 🎨'}</span><span class="s2">تخلط الألوان…</span><span class="s3">ترسم التفاصيل ✨</span></div>
                 <div class="ai-gen-progress">${completed} / ${expected} صورة</div>
                 <div class="ai-gen-prompt">${sanitizeHTML(String(pending.prompt || '').slice(0, 140))}</div>
                 ${gallery}
@@ -3450,6 +3536,7 @@ if (new URLSearchParams(location.search).has('debug')) {
                 let drawKey = '';
                 let drawUrls = [];
                 let drawRes = null;
+                let targetCount = drawRequest.count;
                 try {
                     showNotification('🎨 ناز بدت ترسم... انتظر شوي');
                     const drawApi = typeof resolveCloudApiUrl === 'function' ? resolveCloudApiUrl() : '';
@@ -3459,20 +3546,36 @@ if (new URLSearchParams(location.search).has('debug')) {
                         txt: '',
                         time: serverTimestamp(),
                         avatar: aiAvatar,
-                        pending: { kind: 'image', prompt: drawRequest.prompt, count: drawRequest.count, stage: /[\u0600-\u06FF]/u.test(drawRequest.prompt) ? 'translate' : 'drawing', started: Date.now() },
+                        pending: { kind: 'image', prompt: drawRequest.prompt, count: drawRequest.count, stage: 'prompt', started: Date.now() },
                         caption: `🎨 ناز ترسم: ${drawRequest.prompt}`.slice(0, 160),
                         reply: { name: safeUserName, txt: safeUserMessage.slice(0, 120) }
                     });
                     drawKey = created && created.key ? created.key : '';
                     if (!drawApi) throw new Error('no_api');
-                    const imagePrompt = await translateImagePromptToEnglish(drawRequest.prompt);
+                    const promptPlan = await buildImagePromptPlan(safeUserMessage, drawRequest.prompt, drawRequest.count);
+                    const imagePrompt = /[\u0600-\u06FF]/u.test(promptPlan.prompt)
+                        ? await translateImagePromptToEnglish(promptPlan.prompt)
+                        : promptPlan.prompt;
+                    targetCount = Math.max(1, Math.min(10, promptPlan.count || drawRequest.count));
+                    if (drawKey) {
+                        try {
+                            await update(ref(db, 'messages/' + drawKey), {
+                                pending: { kind: 'image', prompt: drawRequest.prompt, count: targetCount, stage: 'drawing', started: Date.now() },
+                                caption: `🎨 ${imagePrompt}`.slice(0, 160)
+                            });
+                        } catch (promptError) {
+                            console.warn('Could not store polished prompt:', promptError);
+                        }
+                    }
+                    const variations = ['', ', dynamic angle', ', cinematic lighting', ', close-up hero shot', ', wide composition'];
+                    const batchPrompt = offset => `${imagePrompt}${variations[Math.floor(offset / 4) % variations.length]}`;
                     let noProgressAttempts = 0;
                     const drawStartedAt = Date.now();
-                    while (drawUrls.length < drawRequest.count && noProgressAttempts < 2 && Date.now() - drawStartedAt < 480000) {
-                        const batchCount = Math.min(4, drawRequest.count - drawUrls.length);
+                    while (drawUrls.length < targetCount && noProgressAttempts < 3 && Date.now() - drawStartedAt < 540000) {
+                        const batchCount = Math.min(4, targetCount - drawUrls.length);
                         let result = null;
                         try {
-                            result = await fetchJsonWithTimeout(`${drawApi}/image?prompt=${encodeURIComponent(imagePrompt)}&count=${batchCount}`, 150000);
+                            result = await fetchJsonWithTimeout(`${drawApi}/image?prompt=${encodeURIComponent(batchPrompt(drawUrls.length))}&count=${batchCount}`, 150000);
                         } catch (batchError) {
                             console.warn('Image batch failed; retrying remaining count:', batchError);
                         }
@@ -3480,7 +3583,7 @@ if (new URLSearchParams(location.search).has('debug')) {
                         const beforeCount = drawUrls.length;
                         if (Array.isArray(result?.urls)) {
                             for (const url of result.urls) {
-                                if (/^https?:/.test(String(url)) && !drawUrls.includes(url) && drawUrls.length < drawRequest.count) drawUrls.push(url);
+                                if (/^https?:/.test(String(url)) && !drawUrls.includes(url) && drawUrls.length < targetCount) drawUrls.push(url);
                             }
                         }
                         if (drawUrls.length === beforeCount) noProgressAttempts++;
@@ -3489,14 +3592,14 @@ if (new URLSearchParams(location.search).has('debug')) {
                             try {
                                 await update(ref(db, 'messages/' + drawKey), {
                                     imgs: drawUrls,
-                                    pending: { kind: 'image', prompt: drawRequest.prompt, count: drawRequest.count, completed: drawUrls.length, stage: 'drawing', started: Date.now() }
+                                    pending: { kind: 'image', prompt: drawRequest.prompt, count: targetCount, completed: drawUrls.length, stage: 'drawing', started: Date.now() }
                                 });
                             } catch (progressError) {
                                 console.warn('Could not update partial image results:', progressError);
                             }
                         }
-                        if (drawUrls.length < drawRequest.count && (noProgressAttempts > 0 || (result?.urls || []).length < batchCount)) {
-                            await new Promise(resolve => setTimeout(resolve, 1200));
+                        if (drawUrls.length < targetCount && (noProgressAttempts > 0 || (result?.urls || []).length < batchCount)) {
+                            await new Promise(resolve => setTimeout(resolve, 1200 * (noProgressAttempts + 1)));
                         }
                     }
                     if (!drawUrls.length) throw new Error((drawRes && (drawRes.error || drawRes.detail)) || 'gen_failed');
@@ -3505,10 +3608,10 @@ if (new URLSearchParams(location.search).has('debug')) {
                             pending: null,
                             imgs: drawUrls,
                             model: String(drawRes.model || ''),
-                            caption: `🎨 ${drawRequest.prompt} · ${drawUrls.length}${drawUrls.length < drawRequest.count ? ` من ${drawRequest.count}` : ''} صورة`.slice(0, 160)
+                            caption: `🎨 ${imagePrompt} · ${drawUrls.length}${drawUrls.length < targetCount ? ` من ${targetCount}` : ''} صورة`.slice(0, 160)
                         });
                     }
-                    showNotification(`✅ ناز جهزت ${drawUrls.length} من ${drawRequest.count} صور`);
+                    showNotification(`✅ ناز جهزت ${drawUrls.length} من ${targetCount} صور`);
                     return;
                 } catch (drawError) {
                     console.warn('🎨 image generation failed:', drawError);
