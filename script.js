@@ -293,10 +293,11 @@ if (new URLSearchParams(location.search).has('debug')) {
         function polishImagePromptLocally(text, count) {
             const quoted = extractQuotedTexts(text);
             let prompt = String(text || '').replace(/\s+/g, ' ').trim();
-            prompt = prompt.replace(/\b(?:generate|create|make|produce|draw)\s+\d{1,2}\s+(?:separate\s+|different\s+|unique\s+|individual\s+)?(?:images?|pictures?|photos?|thumbnails?|pics?)\b/gi, ' ');
-            prompt = prompt.replace(/\b\d{1,2}\s+(?:separate\s+|different\s+|unique\s+|individual\s+)?(?:images?|pictures?|photos?|thumbnails?|pics?)\b/gi, ' ');
+            prompt = prompt.replace(/\b(?:generate|create|make|produce|draw)\s+\d{1,2}\s+((?:(?:separate|different|unique|individual|roblox|game|distinct|creative)\s+){0,4})(images?|pictures?|photos?|thumbnails?|pics?)\b/gi, (_, modifiers, noun) => `Create one ${modifiers}${noun.replace(/s$/i, '')}`);
+            prompt = prompt.replace(/\b\d{1,2}\s+(?:separate\s+|different\s+|unique\s+|individual\s+)?(?:images?|pictures?|photos?|thumbnails?|pics?)\b/gi, 'one image');
             prompt = prompt.replace(/(?:انشئ|أنشئ|ارسم|سوي|اعمل|اصنع)\s*\d{1,2}\s*(?:صور(?:ة|تين|تان)?|نتائج?|نتايج)?/gu, ' ');
-            prompt = prompt.replace(/\s*,\s*,+/g, ',').replace(/\s+([.,;:!?])/g, '$1').replace(/\s{2,}/g, ' ').trim();
+            prompt = prompt.replace(/\bCreate one (?:separate )?image\b/gi, 'Single-image composition');
+            prompt = prompt.replace(/\b(?:generate|create|make|produce|draw)\s*,/gi, '').replace(/\bmake every (?:image|thumbnail|picture) visually different\b/gi, 'Create a distinct visual variation').replace(/\bnot a collage\b/gi, 'single-image composition, not a collage').replace(/\s*,\s*,+/g, ',').replace(/[.,]\s*,/g, ',').replace(/\s+([.,;:!?])/g, '$1').replace(/\s{2,}/g, ' ').trim();
             if (quoted.length) {
                 const labels = quoted.slice(0, 3).map(item => `"${item}"`).join(' and ');
                 prompt = `${prompt} Render the on-image text ${labels} as bold, crisp, highly legible typography integrated into the artwork.`;
@@ -307,7 +308,7 @@ if (new URLSearchParams(location.search).has('debug')) {
         }
         async function buildImagePromptPlan(rawText, fallbackPrompt, fallbackCount) {
             const source = String(rawText || '').replace(/\s+/g, ' ').trim().slice(0, 1200);
-            const plan = { prompt: polishImagePromptLocally(fallbackPrompt || source, fallbackCount), count: fallbackCount || 1, improved: false };
+            const plan = { prompt: polishImagePromptLocally(source || fallbackPrompt, fallbackCount), count: fallbackCount || 1, improved: false };
             if (!source) return plan;
             let catalog = openRouterModelsCache;
             try {
@@ -334,29 +335,26 @@ RULES
 4. Remove the generation count from the prompt. If the user asks for several images, keep the variations described as a general idea.
 5. Any words that must literally appear inside the artwork go inside double quotes, e.g. "LEVEL 0 TO MAX".
 6. Read the requested number of images: digits, Arabic words (صورتين، ثلاث صور، خمس نتائج…) or English words. Default 1, maximum 10.
-7. Output JSON only, no markdown: {"prompt":"...","count":1}
+7. Do not output JSON. Output exactly these two lines, preserving any quoted text literally:
+PROMPT: <one English prompt>
+COUNT: <integer from 1 to 10>
 
 USER REQUEST:
 ${source}`;
             try {
-                const completion = await callOpenRouter([{ role: 'user', content: instruction }], { maxTokens: 450, json: true, models: models.slice(0, 4) });
-                const text = String(completion?.text || '').trim();
-                let parsed = null;
-                const jsonMatch = text.match(/\{[\s\S]*\}/);
-                if (jsonMatch) {
-                    try {
-                        parsed = JSON.parse(jsonMatch[0]);
-                    } catch (parseError) {
-                        // نماذج مجانية تكتب اقتباسات داخل النص فتكسّر JSON — نستخرج الحقول يدوياً
-                        const promptField = jsonMatch[0].match(/"prompt"\s*:\s*"([\s\S]*?)"\s*,\s*"count"/);
-                        const countField = jsonMatch[0].match(/"count"\s*:\s*(\d{1,2})/);
-                        parsed = { prompt: promptField ? promptField[1].replace(/\\"/g, '"').replace(/\\n/g, ' ') : '', count: countField ? countField[1] : null };
-                    }
-                }
-                const prompt = String(parsed?.prompt || '').replace(/\s+/g, ' ').trim();
-                const modelCount = Number(parsed?.count);
+                const completion = await callOpenRouter([{ role: 'user', content: instruction }], { maxTokens: 450, models: models.slice(0, 4) });
+                const text = String(completion?.text || '').replace(/^```(?:text)?\s*|\s*```$/gi, '').trim();
+                const promptMatch = text.match(/(?:^|\n)\s*PROMPT\s*:\s*([\s\S]*?)(?=\n\s*COUNT\s*:|$)/i);
+                const countMatch = text.match(/(?:^|\n)\s*COUNT\s*:\s*(10|[1-9])\b/i);
+                const prompt = String(promptMatch?.[1] || '').replace(/\s+/g, ' ').trim();
+                const modelCount = Number(countMatch?.[1]);
                 if (prompt.length >= 8 && !/[\u0600-\u06FF]/u.test(prompt)) {
-                    plan.prompt = prompt.slice(0, 700);
+                    const quoted = extractQuotedTexts(source);
+                    let polished = prompt.slice(0, 700);
+                    if (quoted.length && !quoted.every(item => polished.includes(item))) {
+                        polished += ` Render the exact text ${quoted.map(item => `"${item}"`).join(' and ')} clearly in the artwork.`;
+                    }
+                    plan.prompt = polished.slice(0, 900);
                     plan.improved = true;
                 }
                 if (Number.isFinite(modelCount) && modelCount >= 1) {
