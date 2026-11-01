@@ -317,9 +317,19 @@ if (new URLSearchParams(location.search).has('debug')) {
             const base = value.slice(0, keep).replace(/\s+\S*$/, '').trimEnd();
             return `${base}${suffix}`.slice(0, limit);
         }
+        function preserveImageConstraints(prompt, originalRequest) {
+            let result = String(prompt || '').replace(/[,;:]\s*\d{1,2}\s*$/u, '').trim();
+            const lower = result.toLowerCase();
+            const constraints = [...String(originalRequest || '').matchAll(/\b(?:no|without|avoid|never|do not|don't)\s+[^,.;\n]+/giu)]
+                .map(match => match[0].trim().replace(/[.!?]+$/u, ''))
+                .filter((item, index, all) => item.length > 4 && all.findIndex(other => other.toLowerCase() === item.toLowerCase()) === index);
+            const missing = constraints.filter(item => !lower.includes(item.toLowerCase()));
+            if (missing.length) result += ` Constraints: ${missing.join(', ')}.`;
+            return result;
+        }
         async function buildImagePromptPlan(rawText, fallbackPrompt, fallbackCount) {
             const source = String(rawText || '').replace(/\s+/g, ' ').trim().slice(0, 1200);
-            const plan = { prompt: fitImagePrompt(polishImagePromptLocally(source || fallbackPrompt, fallbackCount), source), count: fallbackCount || 1, improved: false };
+            const plan = { prompt: fitImagePrompt(preserveImageConstraints(polishImagePromptLocally(source || fallbackPrompt, fallbackCount), source), source), count: fallbackCount || 1, improved: false };
             if (!source) return plan;
             let catalog = openRouterModelsCache;
             try {
@@ -361,7 +371,7 @@ ${source}`;
                 const modelCount = Number(countMatch?.[1]);
                 if (prompt.length >= 8 && !/[\u0600-\u06FF]/u.test(prompt)) {
                     const quoted = extractQuotedTexts(source);
-                    plan.prompt = fitImagePrompt(prompt.slice(0, 350), source);
+                    plan.prompt = fitImagePrompt(preserveImageConstraints(prompt.slice(0, 270), source), source);
                     plan.improved = true;
                 }
                 if (Number.isFinite(modelCount) && modelCount >= 1) {
@@ -1219,6 +1229,8 @@ ${source}`;
                 detectDrawRequest,
                 buildImagePromptPlan,
                 polishImagePromptLocally,
+                fitImagePrompt,
+                preserveImageConstraints,
                 extractQuotedTexts,
                 renderImageGenCard,
                 translateImagePromptToEnglish,
