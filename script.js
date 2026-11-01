@@ -372,7 +372,11 @@ COUNT: <integer from 1 to 10>
 USER REQUEST:
 ${source}`;
             try {
-                const completion = await callOpenRouter([{ role: 'user', content: instruction }], { maxTokens: 450, models: models.slice(0, 4) });
+                let plannerTimeout;
+                const completion = await Promise.race([
+                    callOpenRouter([{ role: 'user', content: instruction }], { maxTokens: 450, models: models.slice(0, 4) }),
+                    new Promise((_, reject) => { plannerTimeout = setTimeout(() => reject(new Error('image_prompt_planner_timeout')), 12000); })
+                ]).finally(() => clearTimeout(plannerTimeout));
                 const text = String(completion?.text || '').replace(/^```(?:text)?\s*|\s*```$/gi, '').trim();
                 const promptMatch = text.match(/(?:^|\n)\s*PROMPT\s*:\s*([\s\S]*?)(?=\n\s*COUNT\s*:|$)/i);
                 const countMatch = text.match(/(?:^|\n)\s*COUNT\s*:\s*(10|[1-9])\b/i);

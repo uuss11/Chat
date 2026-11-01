@@ -3,7 +3,7 @@ const SHELL = [
   './',
   './index.html',
   './style.css?v=46',
-  './script.js?v=65',
+  './script.js?v=66',
   './naz-tools.js?v=39',
   './manifest.webmanifest',
   './pwa-icon.svg',
