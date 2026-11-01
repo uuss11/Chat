@@ -297,7 +297,7 @@ if (new URLSearchParams(location.search).has('debug')) {
             prompt = prompt.replace(/\b\d{1,2}\s+(?:separate\s+|different\s+|unique\s+|individual\s+)?(?:images?|pictures?|photos?|thumbnails?|pics?)\b/gi, 'one image');
             prompt = prompt.replace(/(?:انشئ|أنشئ|ارسم|سوي|اعمل|اصنع)\s*\d{1,2}\s*(?:صور(?:ة|تين|تان)?|نتائج?|نتايج)?/gu, ' ');
             prompt = prompt.replace(/\bCreate one (?:separate )?image\b/gi, 'Single-image composition');
-            prompt = prompt.replace(/\b(?:generate|create|make|produce|draw)\s*,/gi, '').replace(/\bmake every (?:image|thumbnail|picture) visually different\b/gi, 'Create a distinct visual variation').replace(/\bnot a collage\b/gi, 'single-image composition, not a collage').replace(/\s*,\s*,+/g, ',').replace(/[.,]\s*,/g, ',').replace(/\s+([.,;:!?])/g, '$1').replace(/\s{2,}/g, ' ').trim();
+            prompt = prompt.replace(/\b(?:generate|create|make|produce|draw)\s*,/gi, '').replace(/\bmake every (?:image|thumbnail|picture) visually different(?:,\s*creative)?(?:,\s*and eye-catching)?/gi, 'Create distinct, creative, eye-catching visual variations').replace(/\bnot a collage\b/gi, 'single-image composition, not a collage').replace(/Single-image composition,\s*single-image composition/gi, 'Single-image composition').replace(/\s*,\s*,+/g, ',').replace(/[.,]\s*,/g, ',').replace(/\s+([.,;:!?])/g, '$1').replace(/\s{2,}/g, ' ').trim();
             if (quoted.length) {
                 const labels = quoted.slice(0, 3).map(item => `"${item}"`).join(' and ');
                 prompt = `${prompt} Render the on-image text ${labels} as bold, crisp, highly legible typography integrated into the artwork.`;
@@ -306,9 +306,20 @@ if (new URLSearchParams(location.search).has('debug')) {
             }
             return prompt.slice(0, 700);
         }
+        function fitImagePrompt(prompt, originalRequest) {
+            const value = String(prompt || '').replace(/\s+/g, ' ').trim();
+            const quoted = extractQuotedTexts(originalRequest);
+            const missing = quoted.filter(text => !value.includes(text));
+            const suffix = missing.length ? ` Exact visible text: ${missing.slice(0, 3).map(text => `"${text}"`).join(' and ')}.` : '';
+            const limit = 380; // عامل Cloudflare يقبل حتى 400 حرف؛ نترك هامشاً للترميز.
+            if (value.length + suffix.length <= limit) return value + suffix;
+            const keep = Math.max(80, limit - suffix.length);
+            const base = value.slice(0, keep).replace(/\s+\S*$/, '').trimEnd();
+            return `${base}${suffix}`.slice(0, limit);
+        }
         async function buildImagePromptPlan(rawText, fallbackPrompt, fallbackCount) {
             const source = String(rawText || '').replace(/\s+/g, ' ').trim().slice(0, 1200);
-            const plan = { prompt: polishImagePromptLocally(source || fallbackPrompt, fallbackCount), count: fallbackCount || 1, improved: false };
+            const plan = { prompt: fitImagePrompt(polishImagePromptLocally(source || fallbackPrompt, fallbackCount), source), count: fallbackCount || 1, improved: false };
             if (!source) return plan;
             let catalog = openRouterModelsCache;
             try {
@@ -329,7 +340,7 @@ if (new URLSearchParams(location.search).has('debug')) {
             const instruction = `You prepare prompts for a text-to-image model. The user request is written in Arabic, English or a mix.
 
 RULES
-1. Return ONE English image prompt for a SINGLE image, at most 500 characters.
+1. Return ONE English image prompt for a SINGLE image, at most 350 characters.
 2. Keep the visual subject, style, colors, mood and every negative constraint the user asked for.
 3. NEVER describe a collage, grid, contact sheet or multiple panels; the app generates each image separately.
 4. Remove the generation count from the prompt. If the user asks for several images, keep the variations described as a general idea.
@@ -350,11 +361,7 @@ ${source}`;
                 const modelCount = Number(countMatch?.[1]);
                 if (prompt.length >= 8 && !/[\u0600-\u06FF]/u.test(prompt)) {
                     const quoted = extractQuotedTexts(source);
-                    let polished = prompt.slice(0, 700);
-                    if (quoted.length && !quoted.every(item => polished.includes(item))) {
-                        polished += ` Render the exact text ${quoted.map(item => `"${item}"`).join(' and ')} clearly in the artwork.`;
-                    }
-                    plan.prompt = polished.slice(0, 900);
+                    plan.prompt = fitImagePrompt(prompt.slice(0, 350), source);
                     plan.improved = true;
                 }
                 if (Number.isFinite(modelCount) && modelCount >= 1) {
