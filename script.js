@@ -309,8 +309,10 @@ if (new URLSearchParams(location.search).has('debug')) {
         function fitImagePrompt(prompt, originalRequest) {
             const value = String(prompt || '').replace(/\s+/g, ' ').trim();
             const quoted = extractQuotedTexts(originalRequest);
-            const missing = quoted.filter(text => !value.includes(text));
-            const suffix = missing.length ? ` Exact visible text: ${missing.slice(0, 3).map(text => `"${text}"`).join(' and ')}.` : '';
+            const missing = quoted.filter(text => !value.includes(`"${text}"`) && !value.includes(`“${text}”`));
+            const constraints = [...String(originalRequest || '').matchAll(/\b(?:no|without|avoid|never|do not|don't)\s+[^,.;\n]+/giu)].map(match => match[0].trim());
+            const missingConstraints = constraints.filter(item => !value.toLowerCase().includes(item.toLowerCase()));
+            const suffix = `${missing.length ? ` Exact visible text: ${missing.slice(0, 3).map(text => `"${text}"`).join(' and ')}.` : ''}${missingConstraints.length ? ` Constraints: ${missingConstraints.join(', ')}.` : ''}`;
             const limit = 380; // عامل Cloudflare يقبل حتى 400 حرف؛ نترك هامشاً للترميز.
             if (value.length + suffix.length <= limit) return value + suffix;
             const keep = Math.max(80, limit - suffix.length);
@@ -367,11 +369,10 @@ ${source}`;
                 const text = String(completion?.text || '').replace(/^```(?:text)?\s*|\s*```$/gi, '').trim();
                 const promptMatch = text.match(/(?:^|\n)\s*PROMPT\s*:\s*([\s\S]*?)(?=\n\s*COUNT\s*:|$)/i);
                 const countMatch = text.match(/(?:^|\n)\s*COUNT\s*:\s*(10|[1-9])\b/i);
-                const prompt = String(promptMatch?.[1] || '').replace(/\s+/g, ' ').trim();
+                const prompt = String(promptMatch?.[1] || '').replace(/\\+"/g, '"').replace(/\\n/g, ' ').replace(/\s+/g, ' ').trim();
                 const modelCount = Number(countMatch?.[1]);
                 if (prompt.length >= 8 && !/[\u0600-\u06FF]/u.test(prompt)) {
-                    const quoted = extractQuotedTexts(source);
-                    plan.prompt = fitImagePrompt(preserveImageConstraints(prompt.slice(0, 270), source), source);
+                    plan.prompt = fitImagePrompt(preserveImageConstraints(prompt.slice(0, 240), source), source);
                     plan.improved = true;
                 }
                 if (Number.isFinite(modelCount) && modelCount >= 1) {
