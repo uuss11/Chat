@@ -8,6 +8,7 @@
  *   GET /tiktok?user=               معلومات حساب تيك توك (صفحة التضمين)
  *   GET /instagram?user=            معلومات حساب انستغرام
  *   GET /image?prompt=&count=       توليد صورة (Workers AI) وتخزينها في KV
+ *   POST /image/edit                تعديل صورة مرجعية بصيغة multipart/form-data
  *   POST /upload                    رفع صورة/فيديو إلى KV (20 MiB، صلاحية 180 يوم)
  *   GET /media/<id>                 إرجاع صورة/فيديو المستخدم من KV
  *   GET /img/<key>                  إرجاع الصورة المولدة المخزنة
@@ -226,23 +227,39 @@ function b64ToBytes(b64) {
     for (let i = 0; i < bin.length; i++) out[i] = bin.charCodeAt(i);
     return out;
 }
-const IMG_MODELS = ['@cf/black-forest-labs/flux-1-schnell', '@cf/stabilityai/stable-diffusion-xl-base-1.0'];
-async function generateImage(prompt, env) {
+const IMG_EDIT_MODEL = '@cf/black-forest-labs/flux-2-klein-4b';
+const IMG_MODELS = [IMG_EDIT_MODEL, '@cf/black-forest-labs/flux-1-schnell', '@cf/stabilityai/stable-diffusion-xl-base-1.0'];
+async function generateImage(prompt, env, referenceImage = null) {
     if (!env.AI || !env.IMAGES) return { error: 'bindings_missing' };
     let detail = '';
-    for (const model of IMG_MODELS) {
+    const models = referenceImage ? [IMG_EDIT_MODEL] : IMG_MODELS;
+    for (const model of models) {
         try {
-            const out = await env.AI.run(model, { prompt, steps: 4 });
-            let b64 = '';
-            if (out && typeof out.image === 'string') b64 = out.image;
-            else if (out && out.image instanceof Uint8Array) {
-                let s = '';
-                for (let i = 0; i < out.image.length; i++) s += String.fromCharCode(out.image[i]);
-                b64 = btoa(s);
+            let out;
+            if (model === IMG_EDIT_MODEL) {
+                const form = new FormData();
+                form.append('prompt', prompt);
+                form.append('width', '1024');
+                form.append('height', '768');
+                if (referenceImage) form.append('input_image_0', new Blob([referenceImage.bytes], { type: referenceImage.type }), 'reference.jpg');
+                const serialized = new Response(form);
+                out = await env.AI.run(model, { multipart: { body: serialized.body, contentType: serialized.headers.get('content-type') } });
+            } else {
+                out = await env.AI.run(model, { prompt, steps: 4 });
             }
-            if (!b64) { detail = 'empty'; continue; }
+            if (!out || !out.image) { detail = 'empty'; continue; }
+            let bytes;
+            if (typeof out.image === 'string') {
+                bytes = b64ToBytes(out.image.replace(/^data:image\/[a-z0-9.+-]+;base64,/i, ''));
+            } else if (out.image instanceof Uint8Array) bytes = out.image;
+            else if (out.image instanceof ArrayBuffer) bytes = new Uint8Array(out.image);
+            if (!bytes || !bytes.byteLength) { detail = 'empty'; continue; }
+            const contentType = bytes[0] === 0x89 && bytes[1] === 0x50 ? 'image/png'
+                : bytes[0] === 0xff && bytes[1] === 0xd8 ? 'image/jpeg'
+                : bytes[0] === 0x52 && bytes[1] === 0x49 ? 'image/webp'
+                : (out.mime_type || 'image/jpeg');
             const key = 'i/' + Date.now().toString(36) + '-' + Math.random().toString(36).slice(2, 8);
-            await env.IMAGES.put(key, b64ToBytes(b64), { metadata: { contentType: 'image/jpeg' } });
+            await env.IMAGES.put(key, bytes, { metadata: { contentType } });
             return { key, model };
         } catch (e) {
             detail = String(e).slice(0, 140);
@@ -337,7 +354,36 @@ export default {
             return json({ ok: false, error: 'search_failed', tried }, 502, origin);
         }
 
-        if (path === '/image') {
+        if (path === '/image/edit' && request.method === 'POST') {
+            if (!env.AI || !env.IMAGES) return json({ ok: false, error: 'bindings_missing' }, 503, origin);
+            if (!(request.headers.get('Content-Type') || '').toLowerCase().startsWith('multipart/form-data')) {
+                return json({ ok: false, error: 'multipart_required' }, 415, origin);
+            }
+            let form;
+            try { form = await request.formData(); }
+            catch { return json({ ok: false, error: 'invalid_multipart' }, 400, origin); }
+            const prompt = String(form.get('prompt') || '').trim().slice(0, 400);
+            const count = Math.min(4, Math.max(1, parseInt(form.get('count') || '1', 10) || 1));
+            const file = form.get('image');
+            if (prompt.length < 3) return json({ ok: false, error: 'short_prompt' }, 400, origin);
+            if (!file || typeof file.arrayBuffer !== 'function' || !/^image\/(?:jpeg|png|webp)$/.test(String(file.type || '').toLowerCase())) {
+                return json({ ok: false, error: 'reference_image_required' }, 400, origin);
+            }
+            if (!file.size || file.size > 2 * 1024 * 1024) return json({ ok: false, error: 'reference_image_too_large' }, 413, origin);
+            const referenceImage = { bytes: new Uint8Array(await file.arrayBuffer()), type: file.type };
+            const started = Date.now();
+            const urls = [];
+            for (let i = 0; i < count; i++) {
+                const result = await generateImage(prompt, env, referenceImage);
+                if (result.error) {
+                    if (!urls.length) return json({ ok: false, error: result.error, detail: result.detail || '' }, 502, origin);
+                    break;
+                }
+                urls.push(u.origin + '/img/' + result.key);
+            }
+            return json({ ok: true, urls, model: IMG_EDIT_MODEL, ms: Date.now() - started }, 200, origin);
+        }
+        if (path === '/image' && request.method === 'GET') {
             const prompt = (u.searchParams.get('prompt') || '').trim().slice(0, 400);
             const count = Math.min(4, Math.max(1, parseInt(u.searchParams.get('count') || '1', 10) || 1));
             if (prompt.length < 3) return json({ ok: false, error: 'short_prompt' }, 400, origin);

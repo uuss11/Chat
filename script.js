@@ -246,6 +246,27 @@ if (new URLSearchParams(location.search).has('debug')) {
             return { prompt: prompt, count: count, raw: value.slice(0, 300) };
         }
 
+        const IMAGE_EDIT_INTENT = /(?:عدّل|عدل|تعديل|غيّر|غير|تغيير|بدّل|بدل|استبدل|احذف|امسح|أضف|اضف|زوّد|زود|خليها|خلي|خلّي|حوّل|حول|رتّب|رتب|حسّن|حسن|edit|modify|change|replace|remove|erase|add|make it|turn it into|adjust|recolor)/iu;
+        async function findRepliedImageUrl(messageKey) {
+            if (!messageKey) return '';
+            try {
+                const current = await get(ref(db, `messages/${messageKey}`));
+                const targetId = current.val()?.reply?.messageId;
+                if (!targetId) return '';
+                const targetSnap = await get(ref(db, `messages/${targetId}`));
+                const target = targetSnap.val() || {};
+                const candidates = [
+                    target.isImage ? target.txt : '',
+                    ...(Array.isArray(target.imgs) ? target.imgs : []),
+                    target.qr?.url || ''
+                ];
+                return candidates.map(url => sanitizeURL(String(url || ''))).find(url => url && /^https?:\/\//i.test(url)) || '';
+            } catch (error) {
+                console.warn('Could not load replied image for edit:', error?.message || error);
+                return '';
+            }
+        }
+
         async function translateImagePromptToEnglish(prompt) {
             const original = String(prompt || '').replace(/\s+/g, ' ').trim().slice(0, 400);
             if (!/[\u0600-\u06FF]/u.test(original)) return original;
@@ -394,6 +415,55 @@ ${source}`;
             }
             return plan;
         }
+        async function prepareImageReference(sourceUrl) {
+            const safeUrl = sanitizeURL(sourceUrl);
+            if (!safeUrl) throw new Error('edit_reference_unavailable');
+            const response = await fetch(safeUrl, { mode: 'cors', cache: 'force-cache' });
+            if (!response.ok) throw new Error('edit_reference_unavailable');
+            const sourceBlob = await response.blob();
+            if (!String(sourceBlob.type || '').startsWith('image/')) throw new Error('edit_reference_unavailable');
+            let bitmap;
+            try {
+                if (typeof createImageBitmap === 'function') bitmap = await createImageBitmap(sourceBlob);
+                else throw new Error('bitmap_unavailable');
+            } catch {
+                const objectUrl = URL.createObjectURL(sourceBlob);
+                try {
+                    bitmap = await new Promise((resolve, reject) => {
+                        const image = new Image();
+                        image.onload = () => resolve(image);
+                        image.onerror = () => reject(new Error('edit_reference_unavailable'));
+                        image.src = objectUrl;
+                    });
+                } finally { URL.revokeObjectURL(objectUrl); }
+            }
+            try {
+                const scale = Math.min(1, 512 / Math.max(bitmap.width, bitmap.height));
+                const canvas = document.createElement('canvas');
+                canvas.width = Math.max(1, Math.round(bitmap.width * scale));
+                canvas.height = Math.max(1, Math.round(bitmap.height * scale));
+                const context = canvas.getContext('2d');
+                if (!context) throw new Error('edit_reference_unavailable');
+                context.drawImage(bitmap, 0, 0, canvas.width, canvas.height);
+                const result = await new Promise(resolve => canvas.toBlob(resolve, 'image/jpeg', .9));
+                if (!result || result.size > 2 * 1024 * 1024) throw new Error('edit_reference_unavailable');
+                return result;
+            } finally { bitmap.close?.(); }
+        }
+        async function generateEditedImages(api, prompt, referenceBlob, count) {
+            const form = new FormData();
+            form.append('prompt', String(prompt || '').slice(0, 380));
+            form.append('count', String(Math.max(1, Math.min(4, Number(count) || 1))));
+            form.append('image', referenceBlob, 'reference.jpg');
+            const controller = new AbortController();
+            const timer = setTimeout(() => controller.abort(), 150000);
+            try {
+                const response = await fetch(`${String(api).replace(/\/+$/, '')}/image/edit`, { method: 'POST', body: form, signal: controller.signal });
+                const result = await response.json().catch(() => ({}));
+                if (!response.ok || !result.ok) throw new Error(result.error || 'image_edit_failed');
+                return result;
+            } finally { clearTimeout(timer); }
+        }
         function renderImageGenCard(m) {
             const pending = m.pending && m.pending.kind === 'image' ? m.pending : null;
             const imgs = Array.isArray(m.imgs) ? m.imgs.filter(u => /^https?:/.test(String(u))).slice(0, 10) : [];
@@ -413,7 +483,7 @@ ${source}`;
                     <div class="ai-gen-brush"><i class="fas fa-paintbrush"></i></div>
                 </div>
                 <div class="ai-gen-waves"><span></span><span></span><span></span><span></span><span></span><span></span></div>
-                <div class="ai-gen-status"><span class="s1">${pending.stage === 'prompt' || pending.stage === 'translate' ? 'ناز ترتّب الوصف وتترجمه 🌐' : 'ناز تفتح لوحة الرسم 🎨'}</span><span class="s2">تخلط الألوان…</span><span class="s3">ترسم التفاصيل ✨</span></div>
+                <div class="ai-gen-status"><span class="s1">${pending.stage === 'editing' ? 'ناز تعدّل الصورة حسب طلبك 🪄' : pending.stage === 'prompt' || pending.stage === 'translate' ? 'ناز ترتّب الوصف وتترجمه 🌐' : 'ناز تفتح لوحة الرسم 🎨'}</span><span class="s2">${pending.stage === 'editing' ? 'تطبّق التغييرات…' : 'تخلط الألوان…'}</span><span class="s3">${pending.stage === 'editing' ? 'تحافظ على تفاصيل الصورة ✨' : 'ترسم التفاصيل ✨'}</span></div>
                 <div class="ai-gen-progress">${completed} / ${expected} صورة</div>
                 <div class="ai-gen-prompt">${sanitizeHTML(String(pending.prompt || '').slice(0, 140))}</div>
                 ${gallery}
@@ -1594,8 +1664,9 @@ ${source}`;
             suppressMessageClick = true;
             setTimeout(() => { suppressMessageClick = false; }, 850);
         };
+        const messageContentTargetSelector = 'a,button,input,textarea,select,video,audio,iframe,img,.media-card,.link-preview,.ai-gen-card,.ai-gen-grid,.qr-card,.results-card,.web-card,.embed-card,.profile-card,.file-card,.theme-proposal-card,[data-result-url],[data-tool-action],[data-tool-menu]';
         chatFlowElement?.addEventListener('pointerdown', event => {
-            if (event.pointerType !== 'touch' || event.button > 0 || event.target.closest('button,a,input,video,audio,[data-tool-card],.tool-bubble')) return;
+            if (event.pointerType !== 'touch' || event.button > 0 || event.target.closest(messageContentTargetSelector) || event.target.closest('[data-tool-card],.tool-bubble')) return;
             const container = event.target.closest('.msg-container');
             const messageId = container?.dataset.msgId;
             const message = messageRecordMap.get(messageId);
@@ -1778,7 +1849,7 @@ ${source}`;
                             </div>
                             ${m.uid === me.user ? `<img src="${safeAvatarAttr}" class="msg-avatar" alt="${safeName}" onclick="openUserAvatarModal('${safeAvatarAttr}')" onerror="this.src='${getDefaultAvatarUrl(safeUid)}'">` : ''}
                         </div>
-                        <div class="bubble ${isBanned ? 'banned-msg' : ''} ${m.tool || m.themeProposal ? 'tool-bubble' : ''}" ${m.tool && TOOL_KINDS[m.tool.kind] || m.themeProposal ? '' : `onclick="openMenu('${sanitizeHTML(child.key)}', ${safeM})"`}>
+                        <div class="bubble ${isBanned ? 'banned-msg' : ''} ${m.tool || m.themeProposal ? 'tool-bubble' : ''}" ${m.tool && TOOL_KINDS[m.tool.kind] || m.themeProposal ? '' : `onclick="if(event.target.closest('${messageContentTargetSelector}')){event.stopPropagation();return;}openMenu('${sanitizeHTML(child.key)}', ${safeM})"`}>
                             ${m.reply ? replyPreview(m.reply) : ''}
                             ${!m.tool && !m.themeProposal && !m.isImage && !m.file && !m.embed && !m.profile && !m.qr && !m.web && !m.results && !m.media && !m.imgs && !m.pending ? `<div class="message-text" dir="auto">${content}</div>` : content}
                         </div>
@@ -1794,7 +1865,10 @@ ${source}`;
                             const messageText = typeof m.txt === 'string' ? m.txt : '';
                             const isMention = (!m.forwarded && (/(?:^|[^\p{L}\p{N}_])@(?:naz|ناز)(?=$|[^\p{L}\p{N}_])/iu.test(messageText) || /(?:^|[^\p{L}\p{N}_])ناز(?:$|[^\p{L}\p{N}_])/iu.test(messageText) || /@(?:انشاء|إنشاء)\s+صور/iu.test(messageText) || /@(?:اداة|أداة)-لعبة\s+تفاعلية/iu.test(messageText)));
                             const isReplyToNaz = (!m.forwarded && m.reply && (m.reply.name === (dbAiConfig?.name || 'NAZ Ai') || m.reply.name === 'NAZ Ai'));
-                            const shouldReply = Boolean(isMention || isReplyToNaz);
+                            const replyTarget = m.reply?.messageId ? messageRecordMap.get(m.reply.messageId) : null;
+                            const isReplyToImage = Boolean(!m.forwarded && m.reply && (m.reply.isImage || replyTarget?.isImage || replyTarget?.qr?.url || (Array.isArray(replyTarget?.imgs) && replyTarget.imgs.length) || /^(?:صورة|🎨|🪄|رمز QR)/u.test(String(m.reply.txt || ''))));
+                            const isImageEditRequest = isReplyToImage && IMAGE_EDIT_INTENT.test(messageText);
+                            const shouldReply = Boolean(isMention || isReplyToNaz || isImageEditRequest);
 
                             void reactAsNaz(child.key, m, shouldReply);
                             if (shouldReply && dbAiConfig?.apiKey && !m.aiResponded) {
@@ -2241,7 +2315,8 @@ ${source}`;
         window.closeMenu = () => document.getElementById('msg-menu-overlay').style.display = 'none';
 
         window.prepareReply = () => {
-            replyData = { messageId: activeMsg.id, name: activeMsg.name, txt: activeMsg.deleted ? 'رسالة محذوفة' : activeMsg.isImage ? 'صورة' : String(activeMsg.txt || activeMsg.caption || 'وسائط') };
+            const hasImage = Boolean(activeMsg.isImage || activeMsg.qr?.url || (Array.isArray(activeMsg.imgs) && activeMsg.imgs.length));
+            replyData = { messageId: activeMsg.id, name: activeMsg.name, txt: activeMsg.deleted ? 'رسالة محذوفة' : activeMsg.isImage ? 'صورة' : String(activeMsg.txt || activeMsg.caption || 'وسائط'), isImage: hasImage };
             document.getElementById('rep-preview').style.display = 'flex';
             document.getElementById('rep-name').innerText = activeMsg.name;
             closeMenu();
@@ -3575,7 +3650,29 @@ ${source}`;
 
             const requestKind = detectRequestKind(safeUserMessage).kind;
             console.log('🧭 NAZ request kind:', requestKind);
-            const drawRequest = detectDrawRequest(safeUserMessage);
+            let drawRequest = detectDrawRequest(safeUserMessage);
+            let editReferenceBlob = null;
+            let isImageEdit = false;
+            if (!drawRequest && IMAGE_EDIT_INTENT.test(safeUserMessage)) {
+                const referenceUrl = await findRepliedImageUrl(messageKey);
+                if (referenceUrl) {
+                    try {
+                        showNotification('🪄 ناز تجهّز الصورة حتى تعدّلها…');
+                        editReferenceBlob = await prepareImageReference(referenceUrl);
+                        drawRequest = { prompt: safeUserMessage, count: 1 };
+                        isImageEdit = true;
+                    } catch (referenceError) {
+                        console.warn('Image edit reference could not be prepared:', referenceError?.message || referenceError);
+                        await push(ref(db, 'messages'), {
+                            uid: 'naz_ai', name: aiName,
+                            txt: 'ما كدرت أوصل للصورة المردود عليها أو أجهّزها للتعديل. ارفع الصورة داخل الشات ورد عليها بطلب التغيير مرة ثانية.',
+                            time: serverTimestamp(), avatar: aiAvatar,
+                            reply: { name: safeUserName, txt: safeUserMessage.slice(0, 120) }
+                        });
+                        return;
+                    }
+                }
+            }
             if (drawRequest) {
                 if (!drawRequest.prompt) {
                     await push(ref(db, 'messages'), { uid: 'naz_ai', name: aiName, txt: 'أكيد أرسمها لك؛ بس اكتبلي وصف الصورة اللي ببالك بعد @انشاء صور.', time: serverTimestamp(), avatar: aiAvatar, reply: { name: safeUserName, txt: safeUserMessage.slice(0, 120) } });
@@ -3594,13 +3691,14 @@ ${source}`;
                         txt: '',
                         time: serverTimestamp(),
                         avatar: aiAvatar,
-                        pending: { kind: 'image', prompt: drawRequest.prompt, count: drawRequest.count, stage: 'prompt', started: Date.now() },
-                        caption: `🎨 ناز ترسم: ${drawRequest.prompt}`.slice(0, 160),
+                        pending: { kind: 'image', prompt: drawRequest.prompt, count: drawRequest.count, stage: isImageEdit ? 'editing' : 'prompt', started: Date.now() },
+                        caption: `${isImageEdit ? '🪄 ناز تعدّل الصورة: ' : '🎨 ناز ترسم: '}${drawRequest.prompt}`.slice(0, 160),
                         reply: { name: safeUserName, txt: safeUserMessage.slice(0, 120) }
                     });
                     drawKey = created && created.key ? created.key : '';
                     if (!drawApi) throw new Error('no_api');
-                    const promptPlan = await buildImagePromptPlan(safeUserMessage, drawRequest.prompt, drawRequest.count);
+                    const plannerRequest = isImageEdit ? `Edit the provided reference image according to this change request: ${safeUserMessage}` : safeUserMessage;
+                    const promptPlan = await buildImagePromptPlan(plannerRequest, drawRequest.prompt, drawRequest.count);
                     const imagePrompt = /[\u0600-\u06FF]/u.test(promptPlan.prompt)
                         ? await translateImagePromptToEnglish(promptPlan.prompt)
                         : promptPlan.prompt;
@@ -3608,7 +3706,7 @@ ${source}`;
                     if (drawKey) {
                         try {
                             await update(ref(db, 'messages/' + drawKey), {
-                                pending: { kind: 'image', prompt: drawRequest.prompt, count: targetCount, stage: 'drawing', started: Date.now() },
+                                pending: { kind: 'image', prompt: drawRequest.prompt, count: targetCount, stage: isImageEdit ? 'editing' : 'drawing', started: Date.now() },
                                 caption: `🎨 ${imagePrompt}`.slice(0, 160)
                             });
                         } catch (promptError) {
@@ -3623,7 +3721,9 @@ ${source}`;
                         const batchCount = Math.min(4, targetCount - drawUrls.length);
                         let result = null;
                         try {
-                            result = await fetchJsonWithTimeout(`${drawApi}/image?prompt=${encodeURIComponent(batchPrompt(drawUrls.length))}&count=${batchCount}`, 150000);
+                            result = isImageEdit
+                                ? await generateEditedImages(drawApi, batchPrompt(drawUrls.length), editReferenceBlob, batchCount)
+                                : await fetchJsonWithTimeout(`${drawApi}/image?prompt=${encodeURIComponent(batchPrompt(drawUrls.length))}&count=${batchCount}`, 150000);
                         } catch (batchError) {
                             console.warn('Image batch failed; retrying remaining count:', batchError);
                         }
@@ -3656,7 +3756,7 @@ ${source}`;
                             pending: null,
                             imgs: drawUrls,
                             model: String(drawRes.model || ''),
-                            caption: `🎨 ${imagePrompt} · ${drawUrls.length}${drawUrls.length < targetCount ? ` من ${targetCount}` : ''} صورة`.slice(0, 160)
+                            caption: `${isImageEdit ? '🪄 ' : '🎨 '}${imagePrompt} · ${drawUrls.length}${drawUrls.length < targetCount ? ` من ${targetCount}` : ''} صورة`.slice(0, 160)
                         });
                     }
                     showNotification(`✅ ناز جهزت ${drawUrls.length} من ${targetCount} صور`);
