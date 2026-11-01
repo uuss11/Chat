@@ -310,10 +310,17 @@ if (new URLSearchParams(location.search).has('debug')) {
             const value = String(prompt || '').replace(/\s+/g, ' ').trim();
             const quoted = extractQuotedTexts(originalRequest);
             const missing = quoted.filter(text => !value.includes(`"${text}"`) && !value.includes(`“${text}”`));
-            const constraints = [...String(originalRequest || '').matchAll(/\b(?:no|without|avoid|never|do not|don't)\s+[^,.;\n]+/giu)].map(match => match[0].trim());
+            const constraints = [...String(originalRequest || '').matchAll(/\b(?:no|without|avoid|never|do not|don't)\s+[^,.;\n]+/giu)].slice(0, 5).map(match => match[0].trim());
             const missingConstraints = constraints.filter(item => !value.toLowerCase().includes(item.toLowerCase()));
-            const suffix = `${missing.length ? ` Exact visible text: ${missing.slice(0, 3).map(text => `"${text}"`).join(' and ')}.` : ''}${missingConstraints.length ? ` Constraints: ${missingConstraints.join(', ')}.` : ''}`;
             const limit = 380; // عامل Cloudflare يقبل حتى 400 حرف؛ نترك هامشاً للترميز.
+            if (value.length > limit) {
+                // عند القص، أعد إلحاق جميع المتطلبات المحمية حتى لو كانت موجودة في الجزء الذي سيُحذف.
+                const suffix = `${quoted.length ? ` Exact visible text: ${quoted.slice(0, 3).map(text => `"${text}"`).join(' and ')}.` : ''}${constraints.length ? ` Constraints: ${constraints.join(', ')}.` : ''}`;
+                const keep = Math.max(40, limit - suffix.length);
+                const base = value.slice(0, keep).replace(/\s+\S*$/, '').trimEnd();
+                return `${base}${suffix}`.slice(0, limit);
+            }
+            const suffix = `${missing.length ? ` Exact visible text: ${missing.slice(0, 3).map(text => `"${text}"`).join(' and ')}.` : ''}${missingConstraints.length ? ` Constraints: ${missingConstraints.join(', ')}.` : ''}`;
             if (value.length + suffix.length <= limit) return value + suffix;
             const keep = Math.max(80, limit - suffix.length);
             const base = value.slice(0, keep).replace(/\s+\S*$/, '').trimEnd();
