@@ -15,7 +15,7 @@
     <title>REZA | Ultra Chat Experience</title>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     <link href="https://fonts.googleapis.com/css2?family=Cairo:wght@300;400;500;600;700;800&family=Tajawal:wght@400;500;600;700;800&display=swap" rel="stylesheet">
-    <link rel="stylesheet" href="style.css?v=47">
+    <link rel="stylesheet" href="style.css?v=48">
 </head>
 <body data-theme="calm">
     <div class="bg-container"></div>
@@ -236,6 +236,7 @@
 
     <div id="msg-menu-overlay" class="context-overlay" onclick="closeMenu()">
         <div class="context-menu glass-card" onclick="event.stopPropagation()">
+            <button type="button" id="msg-menu-close" class="context-menu-close" aria-label="إغلاق قائمة الرسالة" title="إغلاق" onclick="closeMenu()"><i class="fas fa-times" aria-hidden="true"></i></button>
             <div class="menu-header">
                 <img id="menu-avatar" class="menu-avatar" src="" alt="" onclick="openMenuAvatarModal()">
                 <div class="menu-username" id="menu-username"></div>

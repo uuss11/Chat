@@ -215,7 +215,10 @@
 
         .context-overlay { position: fixed; inset: 0; background: rgba(0, 0, 0, 0.6); backdrop-filter: blur(5px); z-index: 10000; display: none; align-items: center; justify-content: center; animation: fadeIn 0.2s ease; }
         @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
-        .context-menu { width: 260px; overflow: hidden; animation: pop 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275); }
+        .context-menu { position: relative; width: 260px; overflow: hidden; animation: pop 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275); }
+        .context-menu-close { position: absolute; z-index: 2; top: 10px; left: 10px; width: 32px; height: 32px; padding: 0; display: grid; place-items: center; border: 1px solid var(--glass-border); border-radius: 10px; background: var(--glass-bg); color: var(--text-muted); cursor: pointer; transition: all .2s ease; }
+        .context-menu-close:hover { border-color: var(--danger); background: var(--danger); color: #fff; }
+        .context-menu-close:focus-visible { outline: 2px solid var(--primary); outline-offset: 2px; }
         @keyframes pop { from { transform: scale(0.8) translateY(20px); opacity: 0; } to { transform: scale(1) translateY(0); opacity: 1; } }
         .menu-header { padding: 15px; text-align: center; border-bottom: 1px solid var(--glass-border); }
         .menu-avatar { width: 55px; height: 55px; border-radius: 50%; object-fit: cover; border: 3px solid var(--primary); box-shadow: 0 0 20px var(--primary-glow); margin-bottom: 8px; cursor: pointer; transition: all 0.3s ease; }
