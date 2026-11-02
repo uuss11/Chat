@@ -272,11 +272,37 @@ const winLine = (board, mark) => {
     return lines.some(line => line.every(index => board[index] === mark));
 };
 
-function bestTicTacToeMove(board, mark) {
+function evaluateTicTacToePosition(position) {
+    const lines = [[0, 1, 2], [3, 4, 5], [6, 7, 8], [0, 3, 6], [1, 4, 7], [2, 5, 8], [0, 4, 8], [2, 4, 6]];
+    let score = 0;
+    for (const line of lines) {
+        const cells = line.map(index => position[index]);
+        if (cells.includes('O') && cells.includes('X')) continue;
+        const oCount = cells.filter(cell => cell === 'O').length;
+        const xCount = cells.filter(cell => cell === 'X').length;
+        if (oCount === 2) score += 18;
+        else if (oCount === 1) score += 3;
+        if (xCount === 2) score -= 22;
+        else if (xCount === 1) score -= 3;
+    }
+    const positionWeights = [2, 1, 2, 1, 4, 1, 2, 1, 2];
+    position.forEach((cell, index) => {
+        if (cell === 'O') score += positionWeights[index];
+        else if (cell === 'X') score -= positionWeights[index];
+    });
+    return score;
+}
+
+function bestTicTacToeMove(board, mark, difficulty = 'pro') {
+    const available = board.map((cell, index) => cell ? -1 : index).filter(index => index >= 0);
+    if (!available.length) return -1;
+    if (difficulty === 'noob') return available[Math.floor(Math.random() * available.length)];
+    const maxDepth = difficulty === 'good' ? 3 : Infinity;
     const scoreBoard = (position, side, depth) => {
         if (winLine(position, 'O')) return 10 - depth;
         if (winLine(position, 'X')) return depth - 10;
         if (position.every(Boolean)) return 0;
+        if (depth >= maxDepth) return evaluateTicTacToePosition(position);
         const values = [];
         position.forEach((cell, index) => {
             if (cell) return;
@@ -288,8 +314,7 @@ function bestTicTacToeMove(board, mark) {
     };
     let best = -Infinity;
     let choices = [];
-    board.forEach((cell, index) => {
-        if (cell) return;
+    available.forEach(index => {
         const next = board.slice();
         next[index] = mark;
         const score = scoreBoard(next, mark === 'O' ? 'X' : 'O', 1);
@@ -530,17 +555,20 @@ export const TOOL_KINDS = {
         label: 'إكس-أو',
         icon: 'fa-hashtag',
         defaults: () => ({}),
-        state: () => ({ board: Array(9).fill(null), turn: 'X', winner: null, xPlayer: null, oPlayer: null, xName: 'X', oName: 'O', waitUntil: Date.now() + 15000, scores: { X: 0, O: 0, draw: 0 } }),
-        actions: ['join', 'play', 'reset', 'naz-turn'],
+        state: () => ({ board: Array(9).fill(null), turn: 'X', winner: null, xPlayer: null, oPlayer: null, xName: 'X', oName: 'O', difficulty: 'good', waitUntil: Date.now() + 15000, scores: { X: 0, O: 0, draw: 0 } }),
+        actions: ['join', 'play', 'reset', 'difficulty', 'naz-turn'],
         render(config, state, ctx) {
             const board = normalizeGameBoard(state.board, 9);
             const winner = state.winner;
             const scores = state.scores || {};
             const isPlayer = ctx.user === state.xPlayer || ctx.user === state.oPlayer;
             const joinable = !state.oPlayer && ctx.user !== state.xPlayer;
+            const difficultyOptions = [['noob', 'نوب'], ['good', 'جيد'], ['pro', 'محترف']];
+            const difficulty = difficultyOptions.some(([value]) => value === state.difficulty) ? state.difficulty : 'good';
             return `
                 <div class="tool-game" data-game-ai-deadline="${!state.oPlayer ? Number(state.waitUntil) || '' : ''}" data-game-ai-turn="${state.oPlayer === 'naz_ai' && state.turn === 'O' && !winner ? 'true' : ''}">
                 <div class="game-players"><span class="game-player ${state.turn === 'X' && !winner ? 'is-turn' : ''}">X · ${esc(state.xName || 'اللاعب الأول')}</span><span class="game-vs">ضد</span><span class="game-player ${state.turn === 'O' && !winner ? 'is-turn' : ''}">O · ${esc(state.oName || (state.oPlayer === 'naz_ai' ? 'ناز' : 'بانتظار لاعب'))}</span></div>
+                ${state.oPlayer === 'naz_ai' ? `<div class="game-ai-levels" role="group" aria-label="مستوى ناز"><span class="game-ai-levels-title">مستوى ناز</span>${difficultyOptions.map(([value, label]) => `<button type="button" class="tool-key game-ai-level ${difficulty === value ? 'is-selected' : ''}" data-tool-action="difficulty" data-tool-value="${value}" aria-pressed="${difficulty === value}" ${ctx.user !== state.xPlayer || winner ? 'disabled' : ''}>${label}</button>`).join('')}</div>` : ''}
                 <div class="tool-board">
                     ${board.map((mark, index) => `<button type="button" class="tool-board-cell ${mark ? 'is-filled' : ''}" data-tool-action="play" data-tool-value="${index}" ${!isPlayer || winner || state.turn === 'X' && ctx.user !== state.xPlayer || state.turn === 'O' && ctx.user !== state.oPlayer ? 'disabled' : ''}>${esc(mark || '')}</button>`).join('')}
                 </div>
@@ -1017,6 +1045,11 @@ export function applyToolAction(kind, config, currentState, action, payload, ctx
             if (user !== state.xPlayer && user !== state.oPlayer) return null;
             return { ...state, board: Array(9).fill(null), turn: 'X', winner: null, waitUntil: state.oPlayer ? null : Date.now() + 15000, scores };
         }
+        if (action === 'difficulty') {
+            const difficulty = ['noob', 'good', 'pro'].includes(payload?.value) ? payload.value : null;
+            if (!difficulty || state.oPlayer !== 'naz_ai' || user !== state.xPlayer || state.winner || difficulty === state.difficulty) return null;
+            return { ...state, difficulty, scores };
+        }
         if (action === 'naz-turn') {
             if (!ctx?.isNaz || state.winner) return null;
             let nextState = { ...state, scores };
@@ -1029,7 +1062,7 @@ export function applyToolAction(kind, config, currentState, action, payload, ctx
                 const nazJustJoined = !state.oPlayer && nextState.oPlayer === 'naz_ai';
                 return nazJustJoined ? nextState : null;
             }
-            const index = bestTicTacToeMove(board, 'O');
+            const index = bestTicTacToeMove(board, 'O', nextState.difficulty || 'good');
             if (index < 0) return null;
             board[index] = 'O';
             let winner = winLine(board, 'O') ? 'O' : board.every(Boolean) ? 'draw' : null;
