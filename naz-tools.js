@@ -563,6 +563,7 @@ export const TOOL_KINDS = {
             const scores = state.scores || {};
             const isPlayer = ctx.user === state.xPlayer || ctx.user === state.oPlayer;
             const joinable = !state.oPlayer && ctx.user !== state.xPlayer;
+            const joinLabel = state.xPlayer ? 'انضم كلاعب O' : 'ابدأ اللعب كـ X';
             const difficultyOptions = [['noob', 'نوب'], ['good', 'جيد'], ['pro', 'محترف']];
             const difficulty = difficultyOptions.some(([value]) => value === state.difficulty) ? state.difficulty : 'good';
             return `
@@ -575,7 +576,7 @@ export const TOOL_KINDS = {
                 <div class="game-scoreboard"><span>X فاز ${Number(scores.X) || 0}</span><span>تعادل ${Number(scores.draw) || 0}</span><span>O فاز ${Number(scores.O) || 0}</span></div>
                 <div class="tool-row tool-row-end">
                     <span class="tool-status">${winner ? (winner === 'draw' ? 'تعادل' : `فاز ${winner === 'X' ? esc(state.xName || 'X') : esc(state.oName || 'O')} (${winner})`) : state.oPlayer ? `دور ${state.turn} · ${esc(state.turn === 'X' ? state.xName || 'X' : state.oName || 'O')}` : `دور ${state.turn} · ${esc(state.xName || 'X')} — انضمام O خلال ${Math.max(0, Math.ceil((Number(state.waitUntil || 0) - Date.now()) / 1000))} ث`}</span>
-                    ${joinable ? '<button type="button" class="tool-key tool-key-primary" data-tool-action="join">انضم كلاعب O</button>' : ''}
+                    ${joinable ? `<button type="button" class="tool-key tool-key-primary" data-tool-action="join">${joinLabel}</button>` : ''}
                     ${winner && isPlayer ? '<button type="button" class="tool-key" data-tool-action="reset">جولة جديدة</button>' : ''}
                 </div></div>`;
         }

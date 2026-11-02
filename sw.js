@@ -1,10 +1,10 @@
-const CACHE_NAME = 'reza-chat-shell-v4';
+const CACHE_NAME = 'reza-chat-shell-v5';
 const SHELL = [
   './',
   './index.html',
   './style.css?v=47',
-  './script.js?v=69',
-  './naz-tools.js?v=40',
+  './script.js?v=70',
+  './naz-tools.js?v=41',
   './manifest.webmanifest',
   './pwa-icon.svg',
   './pwa-icon-192.png',
