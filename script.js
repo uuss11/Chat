@@ -1664,7 +1664,7 @@ ${source}`;
             suppressMessageClick = true;
             setTimeout(() => { suppressMessageClick = false; }, 850);
         };
-        const messageContentTargetSelector = 'a,button,input,textarea,select,video,audio,iframe,img,.media-card,.link-preview,.ai-gen-card,.ai-gen-grid,.qr-card,.results-card,.web-card,.embed-card,.profile-card,.file-card,.theme-proposal-card,[data-result-url],[data-tool-action],[data-tool-menu]';
+        const messageContentTargetSelector = 'a,button,input,textarea,select,video,audio,iframe,img,.media-card,.link-preview,.ai-gen-card,.ai-gen-grid,.image-caption,.qr-card,.results-card,.web-card,.embed-card,.profile-card,.file-card,.theme-proposal-card,[data-result-url],[data-tool-action],[data-tool-menu]';
         chatFlowElement?.addEventListener('pointerdown', event => {
             if (event.pointerType !== 'touch' || event.button > 0 || event.target.closest(messageContentTargetSelector) || event.target.closest('[data-tool-card],.tool-bubble')) return;
             const container = event.target.closest('.msg-container');
