@@ -1064,6 +1064,11 @@ button:focus-visible, [role="button"]:focus-visible, a:focus-visible, input:focu
 .game-player { padding: 5px 10px; border: 1px solid var(--glass-border); border-radius: 999px; color: var(--text-secondary); font-size: .72rem; }
 .game-player.is-turn { color: var(--text-primary); border-color: var(--primary); box-shadow: 0 0 14px var(--primary-glow); }
 .game-vs { color: var(--text-muted); font-size: .68rem; }
+.game-ai-levels { display: flex; align-items: center; justify-content: center; flex-wrap: wrap; gap: 6px; margin: 8px 0; padding: 7px 9px; border: 1px solid var(--glass-border); border-radius: 12px; background: var(--glass-bg); }
+.game-ai-levels-title { margin-inline-end: 2px; color: var(--text-secondary); font-size: .72rem; }
+.game-ai-level { padding: 6px 10px; font-size: .7rem; }
+.game-ai-level.is-selected { border-color: rgba(125, 211, 252, .62); background: linear-gradient(140deg, rgba(125, 211, 252, .24), rgba(167, 139, 250, .18)); box-shadow: 0 0 12px var(--primary-glow); }
+.game-ai-level:disabled { cursor: not-allowed; opacity: .62; }
 .game-scoreboard { display: flex; justify-content: center; gap: 8px; flex-wrap: wrap; margin: 8px 0; color: var(--text-muted); font-size: .68rem; }
 .game-scoreboard span { padding: 4px 8px; border-radius: 999px; background: var(--glass-bg); border: 1px solid var(--glass-border); }
 .tool-board-cell:disabled { cursor: not-allowed; opacity: .68; }
