@@ -1789,6 +1789,7 @@ ${source}`;
 
                 snap.forEach(child => {
                     const m = child.val();
+                    if (m?.ownerOnly === true && !isOwnerSession()) return;
                     msgCount++;
                     if (m.isImage) imgCount++;
                     
