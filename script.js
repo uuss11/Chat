@@ -4764,7 +4764,7 @@ ${memoryContext ? `ذاكرة المحادثة: استخدمي منها فقط �
             }
         }
 
-        document.getElementById('chat-flow').addEventListener('click', event => {
+        document.getElementById('chat-flow').addEventListener('click', async event => {
             const themeAction = event.target.closest('[data-theme-action]');
             if (themeAction) {
                 event.preventDefault();
