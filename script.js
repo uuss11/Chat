@@ -3628,6 +3628,18 @@ ${source}`;
                 return;
             }
 
+            const nazTypingRef = ref(db, 'typing/naz_ai');
+            const nazTypingName = String(dbAiConfig.name || 'NAZ Ai');
+            try {
+                await set(nazTypingRef, { name: nazTypingName, time: Date.now() });
+            } catch (typingError) {
+                console.warn('Could not publish NAZ typing state:', typingError?.message || typingError);
+            }
+            const nazTypingHeartbeat = setInterval(() => {
+                update(nazTypingRef, { name: nazTypingName, time: Date.now() }).catch(() => {});
+            }, 2000);
+
+            try {
             const safeUserMessage = String(userMessage || '').slice(0, 1500);
             const safeUserName = String(userName || 'صديق').slice(0, 60);
             const currentSpeakerId = String(speakerId || '');
@@ -3653,7 +3665,6 @@ ${source}`;
                 return;
             }
             
-            showNotification('NAZ Ai يكتب الآن... 🤖');
             console.log(`🤖 AI triggered by ${safeUserName}: "${safeUserMessage}"`);
 
             const requestsNewTheme = currentSpeakerId === 'reza'
@@ -4174,6 +4185,10 @@ ${memoryContext ? `ذاكرة المحادثة: استخدمي منها فقط �
                     });
                 } catch (postError) { console.warn('Could not post NAZ failure notice:', postError?.message || postError); }
                 if (isOwnerSession()) showNotification(`❌ ${notice.slice(0, 100)}`);
+            }
+            } finally {
+                clearInterval(nazTypingHeartbeat);
+                remove(nazTypingRef).catch(() => {});
             }
         }
 
