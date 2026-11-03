@@ -73,7 +73,7 @@ export function detectRequestKind(text) {
 }
 
 export function buildMediaQueryPrompt(userMessage, userName, kind) {
-    const multiple = wantsMultipleResults(userMessage);
+    const multiple = kind === 'audio' || wantsMultipleResults(userMessage);
     const target = kind === 'audio'
         ? 'مقطع صوتي أو أغنية أو مقطوعة موسيقية'
         : kind === 'video'
@@ -81,6 +81,7 @@ export function buildMediaQueryPrompt(userMessage, userName, kind) {
             : 'صورة';
     return `المستخدم ${userName} طلب ${target}: "${userMessage}"
 اكتب من ${multiple ? '3 إلى 5' : '1 إلى 3'} عبارات بحث قصيرة (كلمتين إلى أربع كلمات) للعثور على ${target} مطابق تماماً للطلب.
+- إذا كان الطلب أغنية، فقد يكتب المستخدم جزءاً من كلماتها أو اسماً جزئياً للفنان/الأغنية؛ تعامل مع النص كعبارة مطابقة، واقترح صيغاً بحثية تشمل الكلمات الأصلية، الفنان المحتمل، وعبارات مثل official audio أو lyrics عند ملاءمتها.
 - ركّز على جوهر الطلب (الشيء، المكان، النوع، الفنان إن ذُكر) وتجنّب الكلمات العامة.
 - فضّل الإنجليزية للدقة، وأضف عبارة عربية واحدة مناسبة.
 - لا تكتب روابط.
@@ -721,7 +722,7 @@ export const TOOL_KINDS = {
                         <button type="button" class="search-mode ${mode === 'web' ? 'is-on' : ''}" data-tool-action="search" data-tool-mode="web"><i class="fas fa-globe"></i> الويب</button>
                         <button type="button" class="search-mode ${mode === 'images' ? 'is-on' : ''}" data-tool-action="search" data-tool-mode="images"><i class="fas fa-image"></i> الصور</button>
                         ${query ? `<a class="search-mode search-google" href="${esc(googleSearchUrl(query))}" target="_blank" rel="noopener noreferrer"><i class="fas fa-google"></i> جوجل</a>` : ''}
-                        ${cards && page < 5 ? `<button type="button" class="search-mode search-more" data-tool-action="search" data-tool-mode="${mode}" data-tool-page="next"><i class="fas fa-angles-down"></i> المزيد</button>` : ''}
+                        ${cards && page < 5 ? `<button type="button" class="search-mode search-more" data-tool-action="search" data-tool-mode="${mode}" data-tool-page="next"><i class="fas fa-angles-down"></i> نتائج أكثر</button>` : ''}
                     </div>
                     ${statusText ? `<div class="search-status ${status === 'loading' ? 'is-loading' : ''}">${esc(statusText)}</div>` : ''}
                     ${cards ? `<div class="search-results">${cards}</div>` : status === 'idle' ? '<div class="search-hint">اكتب أي شي واضغط بحث — النتايج تنحفظ وتظهر لكل الأعضاء.</div>' : ''}
@@ -1299,14 +1300,15 @@ export function renderToolCard(msgKey, tool, state, ctx) {
     const currentState = state && typeof state === 'object' ? state : definition.state(tool.config || {});
     const updatedBy = currentState.updatedBy || currentState.lastBy;
     return `
-        <div class="tool-card" data-tool-card data-tool-msg="${esc(msgKey)}">
+        <div class="tool-card ${tool?.visibility === 'private' && ctx?.user !== (tool?.creatorUid || '') ? 'tool-private-locked' : ''}" data-tool-card data-tool-msg="${esc(msgKey)}">
             <div class="tool-card-head">
                 <span class="tool-card-icon"><i class="fas ${definition.icon}"></i></span>
                 <span class="tool-card-title">${esc(tool.title || definition.label)}</span>
                 <span class="tool-card-kind">${esc(definition.label)}</span>
+                ${tool?.kind === 'search' && ctx?.user === (tool?.creatorUid || '') ? `<button type="button" class="tool-visibility-toggle" data-tool-visibility-toggle aria-label="تغيير خصوصية البحث">${tool.visibility === 'private' ? 'خاص' : 'عام'}</button>` : ''}
                 <button type="button" class="tool-card-menu" data-tool-menu aria-label="خيارات الرسالة"><i class="fas fa-ellipsis"></i></button>
             </div>
-            <div class="tool-card-body">${definition.render(tool.config || {}, currentState, ctx || {})}</div>
+            <div class="tool-card-body">${tool?.visibility === 'private' && ctx?.user !== (tool?.creatorUid || '') ? '<div class="tool-private-overlay">محرك بحث خاص</div>' : ''}${definition.render(tool.config || {}, currentState, ctx || {})}</div>
             ${updatedBy ? `<div class="tool-card-foot">آخر تحديث من ${esc(updatedBy)}</div>` : ''}
         </div>`;
 }

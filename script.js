@@ -6,7 +6,7 @@ if (new URLSearchParams(location.search).has('debug')) {
 }
         import { getAnalytics } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-analytics.js";
         import { getDatabase, ref, set, get, push, onValue, query, limitToLast, remove, update, runTransaction, serverTimestamp, onDisconnect } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-database.js";
-        import { TOOL_KINDS, renderToolCard, applyToolAction, parseToolResponse, isToolRequest, buildToolPrompt, isImageRequest, buildImageQueryPrompt, detectRequestKind, buildMediaQueryPrompt, parseMediaPlan, wantsMultipleResults, buildFilePrompt, parseFileResponse, mountToolTimers, clearToolTimers, mountToolCanvases, clearToolCanvases } from './naz-tools.js?v=41';
+        import { TOOL_KINDS, renderToolCard, applyToolAction, parseToolResponse, isToolRequest, buildToolPrompt, isImageRequest, buildImageQueryPrompt, detectRequestKind, buildMediaQueryPrompt, parseMediaPlan, wantsMultipleResults, buildFilePrompt, parseFileResponse, mountToolTimers, clearToolTimers, mountToolCanvases, clearToolCanvases } from './naz-tools.js?v=42';
 
         const syncVisualViewport = () => {
             const height = window.visualViewport?.height || window.innerHeight;
@@ -1800,6 +1800,7 @@ ${source}`;
                         toolRegistry.set(child.key, {
                             tool: m.tool,
                             state: m.toolState,
+                            creatorUid: m.tool.creatorUid || '',
                             menu: { uid: m.uid, name: m.name, txt: m.txt, isImage: false, isPinned: m.isPinned }
                         });
                         content = `${m.txt ? `<div class="tool-caption">${sanitizeHTML(m.txt)}</div>` : ''}${renderToolCard(child.key, m.tool, m.toolState, { user: me.user, name: me.name })}`;
@@ -1850,6 +1851,7 @@ ${source}`;
                             ${m.uid === me.user ? `<img src="${safeAvatarAttr}" class="msg-avatar" alt="${safeName}" onclick="openUserAvatarModal('${safeAvatarAttr}')" onerror="this.src='${getDefaultAvatarUrl(safeUid)}'">` : ''}
                         </div>
                         <div class="bubble ${isBanned ? 'banned-msg' : ''} ${m.tool || m.themeProposal ? 'tool-bubble' : ''}" ${m.tool && TOOL_KINDS[m.tool.kind] || m.themeProposal ? '' : `onclick="if(event.target.closest('${messageContentTargetSelector}')){event.stopPropagation();return;}openMenu('${sanitizeHTML(child.key)}', ${safeM})"`}>
+                            <button type="button" class="message-dots" aria-label="خيارات الرسالة" title="خيارات الرسالة" onclick="event.preventDefault();event.stopPropagation();openMenu('${sanitizeHTML(child.key)}', ${safeM})"><i class="fas fa-ellipsis"></i></button>
                             ${m.reply ? replyPreview(m.reply) : ''}
                             ${!m.tool && !m.themeProposal && !m.isImage && !m.file && !m.embed && !m.profile && !m.qr && !m.web && !m.results && !m.media && !m.imgs && !m.pending ? `<div class="message-text" dir="auto">${content}</div>` : content}
                         </div>
@@ -3965,8 +3967,9 @@ ${source}`;
                         .replace(/[^\p{L}\p{N}\s]/gu, ' ').replace(/\s+/g, ' ').trim().slice(0, 70);
                     const fallbackQueries = [fallbackTerm || safeUserMessage.slice(0, 70)];
                     const queries = plan?.queries?.length ? plan.queries : fallbackQueries;
-                    const multiple = wantsMultipleResults(safeUserMessage);
-                    const candidates = await collectMediaCandidates(requestKind, queries, multiple ? 8 : 1);
+                    const multiple = requestKind === 'audio' || wantsMultipleResults(safeUserMessage);
+                    const resultLimit = requestKind === 'audio' ? 5 : (multiple ? 8 : 1);
+                    const candidates = await collectMediaCandidates(requestKind, queries, resultLimit);
                     const mediaUrl = candidates[0]?.url || null;
                     if (mediaUrl) {
                         const message = {
@@ -4061,6 +4064,8 @@ ${source}`;
                         parsedTool = parseToolResponse(toolCompletion.text);
                     }
                     if (parsedTool) {
+                        parsedTool.tool.creatorUid = currentSpeakerId;
+                        parsedTool.tool.visibility = parsedTool.tool.visibility === 'private' ? 'private' : 'public';
                         const toolState = TOOL_KINDS[parsedTool.tool.kind].state(parsedTool.tool.config);
                         if (['tictactoe', 'connect4'].includes(parsedTool.tool.kind)) {
                             Object.assign(toolState, { xPlayer: currentSpeakerId, xName: safeUserName, oPlayer: null, oName: 'بانتظار لاعب O', waitUntil: Date.now() + 15000, scores: { X: 0, O: 0, draw: 0 } });
@@ -4085,6 +4090,17 @@ ${source}`;
                 }
             }
             
+            if (requestKind === 'interactive' || isToolRequest(safeUserMessage)) {
+                await push(ref(db, 'messages'), {
+                    uid: 'naz_ai',
+                    name: aiName,
+                    txt: 'ما قدرت أجهّز الأداة كمكوّن تفاعلي هالمرة. جرّب توصفلي شنو تريد تسوي بيها.',
+                    time: serverTimestamp(),
+                    avatar: aiAvatar,
+                    reply: { name: safeUserName, txt: safeUserMessage.slice(0, 120) }
+                });
+                return;
+            }
             const prompt = `أنتِ فتاة اسمك ${dbAiConfig.name || 'ناز'} (NAZ)، عمرك 18 سنة، وأنتِ من العراق وتحديداً من بغداد منطقة المنصور.
 مطورك ومبرمجك ومالكك هو شخص اسمه رضا (reza).
 تتحدثين باللهجة العراقية بطلاقة. لا مانع لديك من أن تكوني قاسية، وقحة، أو تستخدمي السب والشتم العادي إذا استدعى الأمر.
@@ -4641,10 +4657,12 @@ ${memoryContext ? `ذاكرة المحادثة: استخدمي منها فقط �
             }
             const mode = payload?.mode === 'images' ? 'images' : 'web';
             const page = payload?.page === 'next' ? Math.min(5, (Number(current.page) || 1) + 1) : 1;
-            await writeToolState(msgKey, { ...current, query, mode, page, status: 'loading', results: [], updatedBy: me.name });
+            const loadingResults = page > 1 && current.query === query && current.mode === mode && Array.isArray(current.results) ? current.results : [];
+            await writeToolState(msgKey, { ...current, query, mode, page, status: 'loading', results: loadingResults, updatedBy: me.name });
             try {
                 const { engine, items } = await runSearch(query, mode, page);
-                const results = items.slice(0, 10);
+                const pageResults = items.slice(0, 10);
+                const results = page > 1 ? [...loadingResults, ...pageResults].slice(0, 50) : pageResults;
                 await writeToolState(msgKey, {
                     ...current,
                     query,
@@ -4666,6 +4684,7 @@ ${memoryContext ? `ذاكرة المحادثة: استخدمي منها فقط �
         async function runToolAction(msgKey, action, payload) {
             const entry = toolRegistry.get(msgKey);
             if (!entry || !me) return;
+            if (entry.tool.visibility === 'private' && entry.creatorUid !== me.user) { showNotification('هذا المحرك خاص بمنشئه.'); return; }
             if (entry.tool.kind === 'search' && action === 'search') {
                 await runSearchToolAction(msgKey, entry, payload);
                 return;
@@ -4798,6 +4817,16 @@ ${memoryContext ? `ذاكرة المحادثة: استخدمي منها فقط �
                 link.click();
                 link.remove();
                 setTimeout(() => URL.revokeObjectURL(link.href), 4000);
+                return;
+            }
+            const visibilityToggle = event.target.closest('[data-tool-visibility-toggle]');
+            if (visibilityToggle) {
+                event.preventDefault(); event.stopPropagation();
+                const privacyCard = visibilityToggle.closest('[data-tool-card]');
+                const privacyEntry = privacyCard ? toolRegistry.get(privacyCard.dataset.toolMsg) : null;
+                if (privacyEntry?.creatorUid !== me?.user) return showNotification('إعداد الخصوصية متاح لمنشئ الأداة فقط.');
+                const nextVisibility = privacyEntry.tool.visibility === 'private' ? 'public' : 'private';
+                await update(ref(db, `messages/${privacyCard.dataset.toolMsg}/tool`), { visibility: nextVisibility });
                 return;
             }
             const trigger = event.target.closest('[data-tool-action]');
