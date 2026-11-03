@@ -1,12 +1,15 @@
-const CACHE_NAME = 'reza-chat-shell-v8';
+const CACHE_NAME = 'reza-chat-shell-v9';
 const SHELL = [
   './',
   './index.html',
   './style.css?v=49',
-  './script.js?v=73',
+  './script.js?v=74',
   './naz-tools.js?v=42',
   './manifest.webmanifest',
   './pwa-icon.svg',
+  './favicon.ico',
+  './favicon-16x16.png',
+  './favicon-32x32.png',
   './pwa-icon-192.png',
   './pwa-icon-512.png',
   './apple-touch-icon.png'
