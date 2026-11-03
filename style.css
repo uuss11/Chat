@@ -1192,11 +1192,9 @@ body { line-height: 1.7; }
 
 /* زر إجراءات دائم لكل رسالة */
 .bubble { position: relative; }
-.message-dots { position: absolute; inset-block-start: 6px; inset-inline-end: 6px; z-index: 4; display: grid; place-items: center; width: 30px; height: 30px; border: 1px solid var(--glass-border); border-radius: 50%; background: rgba(8, 15, 28, .76); color: var(--text-secondary); cursor: pointer; opacity: .72; transition: opacity .15s ease, transform .15s ease, color .15s ease; }
-.message-dots:hover, .message-dots:focus-visible { opacity: 1; color: var(--primary); transform: scale(1.06); }
-.bubble .message-text, .bubble > img, .bubble > .media-card, .bubble > .tool-card { padding-inline-start: 0; }
+.message-dots { position: static; flex: 0 0 28px; opacity: .8; margin-inline-start: 2px; }
+.message-dots:hover, .message-dots:focus-visible { opacity: 1; }
 .tool-visibility-toggle { border: 1px solid var(--glass-border); border-radius: 999px; padding: 5px 10px; color: var(--text-primary); background: rgba(255,255,255,.06); cursor: pointer; font: inherit; font-size: .68rem; }
 .tool-card-body { position: relative; }
 .tool-private-locked .tool-card-body > :not(.tool-private-overlay) { filter: blur(7px); pointer-events: none; user-select: none; }
 .tool-private-overlay { position: absolute; inset: 0; z-index: 2; display: grid; place-items: center; border-radius: 12px; background: rgba(7, 12, 24, .42); color: var(--text-primary); font-weight: 700; }
-@media (hover: none) { .message-dots { opacity: .8; } }

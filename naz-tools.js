@@ -1306,7 +1306,6 @@ export function renderToolCard(msgKey, tool, state, ctx) {
                 <span class="tool-card-title">${esc(tool.title || definition.label)}</span>
                 <span class="tool-card-kind">${esc(definition.label)}</span>
                 ${tool?.kind === 'search' && ctx?.user === (tool?.creatorUid || '') ? `<button type="button" class="tool-visibility-toggle" data-tool-visibility-toggle aria-label="تغيير خصوصية البحث">${tool.visibility === 'private' ? 'خاص' : 'عام'}</button>` : ''}
-                <button type="button" class="tool-card-menu" data-tool-menu aria-label="خيارات الرسالة"><i class="fas fa-ellipsis"></i></button>
             </div>
             <div class="tool-card-body">${tool?.visibility === 'private' && ctx?.user !== (tool?.creatorUid || '') ? '<div class="tool-private-overlay">محرك بحث خاص</div>' : ''}${definition.render(tool.config || {}, currentState, ctx || {})}</div>
             ${updatedBy ? `<div class="tool-card-foot">آخر تحديث من ${esc(updatedBy)}</div>` : ''}

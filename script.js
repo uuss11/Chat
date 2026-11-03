@@ -6,7 +6,7 @@ if (new URLSearchParams(location.search).has('debug')) {
 }
         import { getAnalytics } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-analytics.js";
         import { getDatabase, ref, set, get, push, onValue, query, limitToLast, remove, update, runTransaction, serverTimestamp, onDisconnect } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-database.js";
-        import { TOOL_KINDS, renderToolCard, applyToolAction, parseToolResponse, isToolRequest, buildToolPrompt, isImageRequest, buildImageQueryPrompt, detectRequestKind, buildMediaQueryPrompt, parseMediaPlan, wantsMultipleResults, buildFilePrompt, parseFileResponse, mountToolTimers, clearToolTimers, mountToolCanvases, clearToolCanvases } from './naz-tools.js?v=42';
+        import { TOOL_KINDS, renderToolCard, applyToolAction, parseToolResponse, isToolRequest, buildToolPrompt, isImageRequest, buildImageQueryPrompt, detectRequestKind, buildMediaQueryPrompt, parseMediaPlan, wantsMultipleResults, buildFilePrompt, parseFileResponse, mountToolTimers, clearToolTimers, mountToolCanvases, clearToolCanvases } from './naz-tools.js?v=43';
 
         const syncVisualViewport = () => {
             const height = window.visualViewport?.height || window.innerHeight;
@@ -1856,10 +1856,10 @@ ${source}`;
                                 <span class="msg-name">${safeName} ${assistantBadge} ${ownerBadge} ${pinnedBadge}</span>
                                 <span class="msg-time">${formatTime(m.time)}</span>
                             </div>
+                            <button type="button" class="message-dots tool-card-menu" aria-label="خيارات الرسالة" title="خيارات الرسالة" onclick="event.preventDefault();event.stopPropagation();openMenu('${sanitizeHTML(child.key)}', ${safeM})"><i class="fas fa-ellipsis"></i></button>
                             ${m.uid === me.user ? `<img src="${safeAvatarAttr}" class="msg-avatar" alt="${safeName}" onclick="openUserAvatarModal('${safeAvatarAttr}')" onerror="this.src='${getDefaultAvatarUrl(safeUid)}'">` : ''}
                         </div>
                         <div class="bubble ${isBanned ? 'banned-msg' : ''} ${m.tool || m.themeProposal ? 'tool-bubble' : ''}" ${m.tool && TOOL_KINDS[m.tool.kind] || m.themeProposal ? '' : `onclick="if(event.target.closest('${messageContentTargetSelector}')){event.stopPropagation();return;}openMenu('${sanitizeHTML(child.key)}', ${safeM})"`}>
-                            <button type="button" class="message-dots" aria-label="خيارات الرسالة" title="خيارات الرسالة" onclick="event.preventDefault();event.stopPropagation();openMenu('${sanitizeHTML(child.key)}', ${safeM})"><i class="fas fa-ellipsis"></i></button>
                             ${m.reply ? replyPreview(m.reply) : ''}
                             ${!m.tool && !m.themeProposal && !m.isImage && !m.file && !m.embed && !m.profile && !m.qr && !m.web && !m.results && !m.media && !m.imgs && !m.pending ? `<div class="message-text" dir="auto">${content}</div>` : content}
                         </div>
