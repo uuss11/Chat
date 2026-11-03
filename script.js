@@ -897,6 +897,11 @@ ${source}`;
         let currentViewAvatar = '';
         let currentEditAvatar = '';
 
+        function isOwnerSession() {
+            const enteredId = document.getElementById('user-id')?.value || '';
+            return String(me?.user || enteredId).trim().toLowerCase() === 'reza';
+        }
+
         // عرض رسالة خطأ
         function showError(message) {
             const errorBox = document.getElementById('error-box');
@@ -996,7 +1001,7 @@ ${source}`;
                 return true;
             } catch (error) {
                 console.error('❌ Firebase initialization error:', error);
-                showError('فشل في تهيئة Firebase: ' + error.message);
+                showError(isOwnerSession() ? 'فشل في تهيئة Firebase: ' + error.message : 'تعذّر الاتصال بالخادم. حاول مرة ثانية بعد قليل.');
                 return false;
             }
         }
@@ -1167,6 +1172,18 @@ ${source}`;
             angry: { label: 'غاضبة 😡', fallback: ['😡', '😤', '👎'] },
             rude: { label: 'وقحة', fallback: ['😏', '😂', '🙄'] }
         };
+
+        function ensureNazMoodOptions() {
+            const select = document.getElementById('ai-mood');
+            if (!select) return;
+            for (const [value, label] of [['angry', 'غاضبة 😡'], ['rude', 'وقحة']]) {
+                if (select.querySelector(`option[value="${value}"]`)) continue;
+                const option = document.createElement('option');
+                option.value = value;
+                option.textContent = label;
+                select.appendChild(option);
+            }
+        }
 
         function getNazMood() {
             const configured = dbAiConfig?.mood || 'auto';
@@ -1534,7 +1551,7 @@ ${source}`;
             } catch (error) {
                 console.error('Login error:', error);
                 hideLoading();
-                showError('❌ خطأ غير متوقع: ' + error.message);
+                showError(isOwnerSession() ? '❌ خطأ غير متوقع: ' + error.message : 'تعذّر تسجيل الدخول. راجع البيانات وحاول مرة ثانية.');
             }
         };
 
@@ -3196,6 +3213,7 @@ ${source}`;
                     }
                     // ملء حقول الإعدادات للمالك فقط
                     if (me && me.user === 'reza') {
+                        ensureNazMoodOptions();
                         document.getElementById('ai-name').value = dbAiConfig.name || '';
                         document.getElementById('ai-model').value = dbAiConfig.model || '';
                         document.getElementById('ai-google-key').value = dbAiConfig.googleKey || '';
@@ -3229,6 +3247,8 @@ ${source}`;
         }
 
         window.openAiConfig = () => {
+            ensureNazMoodOptions();
+            document.getElementById('ai-mood').value = dbAiConfig?.mood || 'auto';
             document.getElementById('modal-ai').style.display = 'flex';
             updateGoogleSearchStatus();
             document.getElementById('ai-model-search').focus();
@@ -3584,7 +3604,7 @@ ${source}`;
                     await push(ref(db, 'messages'), {
                         uid: 'naz_ai', name: aiName,
                         txt: 'ماكو مفتاح OpenRouter محفوظ حتى أرد. خلي المالك يضيف مفتاح من إعدادات NAZ.',
-                        time: serverTimestamp(), avatar: aiAvatar,
+                        time: serverTimestamp(), avatar: aiAvatar, ownerOnly: true,
                         reply: { name: String(userName || 'صديق').slice(0, 60), txt: String(userMessage || '').slice(0, 120) }
                     });
                 } catch (error) { console.warn('Could not post missing-key notice:', error?.message || error); }
@@ -3624,11 +3644,11 @@ ${source}`;
                 try {
                     await push(ref(db, 'messages'), {
                         uid: 'naz_ai', name: aiName, txt: notice,
-                        time: serverTimestamp(), avatar: aiAvatar,
+                        time: serverTimestamp(), avatar: aiAvatar, ownerOnly: true,
                         reply: { name: safeUserName, txt: safeUserMessage.slice(0, 120) }
                     });
                 } catch (error) { console.warn('Could not post key-status notice:', error?.message || error); }
-                showNotification(allRejected ? '⚠️ مفاتيح NAZ مرفوضة؛ افحصها من الإعدادات' : '⚠️ مفاتيح NAZ بانتظار حد مؤقت');
+                if (isOwnerSession()) showNotification(allRejected ? '⚠️ مفاتيح NAZ مرفوضة؛ افحصها من الإعدادات' : '⚠️ مفاتيح NAZ بانتظار حد مؤقت');
                 return;
             }
             
@@ -4134,7 +4154,7 @@ ${memoryContext ? `ذاكرة المحادثة: استخدمي منها فقط �
                     reply: { name: safeUserName, txt: safeUserMessage.slice(0, 120) }
                 });
                 const usedModel = String(completion.model || '').split('/').pop();
-                showNotification(`✅ ردت ناز · ${usedModel}`);
+                showNotification(isOwnerSession() ? `✅ ردت ناز · ${usedModel || 'النموذج غير معروف'}` : '✅ تم الرد من قبل ناز');
                 console.log('✅ AI response sent successfully with model:', completion.model);
             } catch (error) {
                 console.error('NAZ reply failed:', error);
@@ -4148,11 +4168,11 @@ ${memoryContext ? `ذاكرة المحادثة: استخدمي منها فقط �
                 try {
                     await push(ref(db, 'messages'), {
                         uid: 'naz_ai', name: aiName, txt: notice,
-                        time: serverTimestamp(), avatar: aiAvatar,
+                        time: serverTimestamp(), avatar: aiAvatar, ownerOnly: true,
                         reply: { name: safeUserName, txt: safeUserMessage.slice(0, 120) }
                     });
                 } catch (postError) { console.warn('Could not post NAZ failure notice:', postError?.message || postError); }
-                showNotification(`❌ ${notice.slice(0, 100)}`);
+                if (isOwnerSession()) showNotification(`❌ ${notice.slice(0, 100)}`);
             }
         }
 
