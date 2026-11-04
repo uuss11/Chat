@@ -367,8 +367,12 @@ export default {
                 if (!description) return json({ ok: false, error: 'empty_vision_result' }, 502, origin);
                 return json({ ok: true, description: description.slice(0, 5000), model: '@cf/meta/llama-3.2-11b-vision-instruct' }, 200, origin);
             } catch (error) {
-                console.error('Cloudflare vision inference failed:', String(error?.message || error).slice(0, 180));
-                return json({ ok: false, error: 'vision_inference_failed' }, 502, origin);
+                const detail = String(error?.message || error).slice(0, 240);
+                console.error('Cloudflare vision inference failed:', detail);
+                const errorCode = /license|agree|acceptable use|terms/i.test(detail) ? 'vision_model_license_required'
+                    : /quota|neurons|daily limit|too many requests/i.test(detail) ? 'vision_quota_exceeded'
+                    : 'vision_inference_failed';
+                return json({ ok: false, error: errorCode }, 502, origin);
             }
         }
 

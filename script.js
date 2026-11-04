@@ -3697,7 +3697,7 @@ ${source}`;
                 console.error('❌ AI config not available, cannot respond');
                 return;
             }
-            if (!getRuntimeKeys().length) {
+            if (!getRuntimeKeys().length && !visionImagePath) {
                 const aiName = dbAiConfig.name || 'NAZ Ai';
                 const aiAvatar = dbAiConfig.avatar || getDefaultAvatarUrl('NAZ');
                 try {
@@ -4256,6 +4256,23 @@ ${source}`;
                     return;
                 } catch (visionError) {
                     console.warn('Cloudflare image understanding unavailable:', visionError?.message || visionError);
+                    const visionCode = String(visionError?.message || 'vision_inference_failed');
+                    if (isOwnerSession()) {
+                        showNotification(visionCode === 'vision_model_license_required'
+                            ? 'يلزم قبول ترخيص نموذج الرؤية في Cloudflare مرة واحدة.'
+                            : visionCode === 'vision_quota_exceeded'
+                                ? 'انتهت حصة Cloudflare Vision اليومية.'
+                                : `تعذر تحليل الصورة (${visionCode}).`);
+                    }
+                    await push(ref(db, 'messages'), {
+                        uid: 'naz_ai',
+                        name: aiName,
+                        txt: 'ما كدرت أحلل الصورة هالمرة. تأكد أن الصورة مرفوعة داخل الدردشة وجرب مرة ثانية.',
+                        time: serverTimestamp(),
+                        avatar: aiAvatar,
+                        reply: { name: safeUserName, txt: safeUserMessage.slice(0, 120) }
+                    });
+                    return;
                 }
             }
             const nazUserMessage = visionImagePath
