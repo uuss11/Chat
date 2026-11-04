@@ -9,6 +9,7 @@
  *   GET /instagram?user=            معلومات حساب انستغرام
  *   GET /image?prompt=&count=       توليد صورة (Workers AI) وتخزينها في KV
  *   POST /image/edit                تعديل صورة مرجعية بصيغة multipart/form-data
+ *   POST /vision                    تحليل صورة دردشة للحساب الموثق عبر Workers AI Vision
  *   POST /upload                    رفع صورة/فيديو إلى KV (20 MiB، صلاحية 180 يوم)
  *   GET /media/<id>                 إرجاع صورة/فيديو المستخدم من KV
  *   GET /img/<key>                  إرجاع الصورة المولدة المخزنة
@@ -227,6 +228,14 @@ function b64ToBytes(b64) {
     for (let i = 0; i < bin.length; i++) out[i] = bin.charCodeAt(i);
     return out;
 }
+function bytesToBase64(bytes) {
+    let binary = '';
+    const chunkSize = 0x8000;
+    for (let offset = 0; offset < bytes.length; offset += chunkSize) {
+        binary += String.fromCharCode(...bytes.subarray(offset, Math.min(offset + chunkSize, bytes.length)));
+    }
+    return btoa(binary);
+}
 const IMG_EDIT_MODEL = '@cf/black-forest-labs/flux-2-klein-4b';
 const IMG_MODELS = [IMG_EDIT_MODEL, '@cf/black-forest-labs/flux-1-schnell', '@cf/stabilityai/stable-diffusion-xl-base-1.0'];
 async function generateImage(prompt, env, referenceImage = null) {
@@ -304,10 +313,63 @@ export default {
                     instagramSession: Boolean(env.IG_SESSIONID),
                     qr: true,
                     imageGen: Boolean(env.AI),
+                    imageVision: Boolean(env.AI && env.IMAGES),
                     imageStore: Boolean(env.IMAGES)
                 },
                 time: new Date().toISOString()
             }, 200, origin);
+        }
+
+        if (path === '/vision' && request.method === 'POST') {
+            if (!env.AI || !env.IMAGES) return json({ ok: false, error: 'vision_unavailable' }, 503, origin);
+            let user = String(request.headers.get('X-Chat-User') || '').toLowerCase();
+            try { user = decodeURIComponent(user); } catch {}
+            const proof = String(request.headers.get('X-Chat-Proof') || '').toLowerCase();
+            if (!user || !/^[a-f0-9]{64}$/.test(proof)) return json({ ok: false, error: 'auth_required' }, 401, origin);
+            try {
+                const dbUrl = String(env.FIREBASE_DB_URL || '').replace(/\/+$/, '');
+                if (!dbUrl) return json({ ok: false, error: 'vision_auth_unavailable' }, 503, origin);
+                const authResponse = await fetch(dbUrl + '/users/' + encodeURIComponent(user) + '.json', { headers: { Accept: 'application/json' } });
+                if (!authResponse.ok) return json({ ok: false, error: 'vision_auth_unavailable' }, 503, origin);
+                const account = await authResponse.json();
+                if (!account || account.isBanned || account.passwordHashed !== true || account.password !== proof) return json({ ok: false, error: 'auth_required' }, 401, origin);
+            } catch (error) {
+                console.error('Vision identity check failed:', String(error).slice(0, 100));
+                return json({ ok: false, error: 'vision_auth_unavailable' }, 503, origin);
+            }
+            let payload;
+            try { payload = await request.json(); } catch { return json({ ok: false, error: 'invalid_json' }, 400, origin); }
+            const imagePath = String(payload.imagePath || '');
+            const prompt = String(payload.prompt || '').trim().slice(0, 1200);
+            let storageKey = '';
+            if (/^\/media\/[0-9a-f-]{36}$/i.test(imagePath)) storageKey = 'u/' + imagePath.slice('/media/'.length);
+            else if (/^\/img\/[A-Za-z0-9._-]{1,200}$/.test(imagePath)) storageKey = imagePath.slice('/img/'.length);
+            else return json({ ok: false, error: 'invalid_image_path' }, 400, origin);
+            let stored;
+            try { stored = await env.IMAGES.getWithMetadata(storageKey, 'arrayBuffer'); }
+            catch { return json({ ok: false, error: 'image_storage_unavailable' }, 503, origin); }
+            if (!stored?.value?.byteLength) return json({ ok: false, error: 'image_not_found' }, 404, origin);
+            if (stored.value.byteLength > 6 * 1024 * 1024) return json({ ok: false, error: 'image_too_large' }, 413, origin);
+            const contentType = String(stored.metadata?.contentType || 'image/jpeg').toLowerCase();
+            if (!/^image\/(jpeg|png|webp|gif|avif)$/.test(contentType)) return json({ ok: false, error: 'unsupported_image_type' }, 415, origin);
+            try {
+                const image = `data:${contentType};base64,${bytesToBase64(new Uint8Array(stored.value))}`;
+                const result = await env.AI.run('@cf/meta/llama-3.2-11b-vision-instruct', {
+                    messages: [
+                        { role: 'system', content: 'أنت محلل صور دقيق. صف ما يظهر بالصورة بوضوح وباختصار، ثم أجب عن سؤال المستخدم بالعربية. لا تخمّن النصوص أو التفاصيل غير الواضحة.' },
+                        { role: 'user', content: prompt || 'صف هذه الصورة.' }
+                    ],
+                    image,
+                    max_tokens: 320,
+                    temperature: 0.2
+                });
+                const description = String(result?.response || result?.result || '').trim();
+                if (!description) return json({ ok: false, error: 'empty_vision_result' }, 502, origin);
+                return json({ ok: true, description: description.slice(0, 5000), model: '@cf/meta/llama-3.2-11b-vision-instruct' }, 200, origin);
+            } catch (error) {
+                console.error('Cloudflare vision inference failed:', String(error?.message || error).slice(0, 180));
+                return json({ ok: false, error: 'vision_inference_failed' }, 502, origin);
+            }
         }
 
         if (path === '/tiktok' || path === '/instagram') {
