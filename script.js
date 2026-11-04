@@ -1657,6 +1657,22 @@ ${source}`;
 
         let messageRenderSequence = 0;
         const messageRecordMap = new Map();
+        async function syncReplyPreviewRecords(sourceId, text, deleted = false) {
+            if (!sourceId || !db) return;
+            try {
+                const snapshot = await get(query(ref(db, 'messages'), limitToLast(500)));
+                const updates = {};
+                snapshot.forEach(child => {
+                    const message = child.val();
+                    if (message?.reply?.messageId !== sourceId) return;
+                    updates[`messages/${child.key}/reply/txt`] = deleted ? 'رسالة محذوفة' : String(text || '');
+                    updates[`messages/${child.key}/reply/deleted`] = Boolean(deleted);
+                });
+                if (Object.keys(updates).length) await update(ref(db), updates);
+            } catch (error) {
+                console.warn('Reply preview records could not be synchronized:', error?.message || error);
+            }
+        }
         let knownMessageKeys = new Set();
         let newMessageCount = 0;
         const chatFlowElement = document.getElementById('chat-flow');
@@ -1772,7 +1788,7 @@ ${source}`;
                 if (snap.size < messagePageSize) noMoreOlderMessages = true;
                 const replyPreview = reply => {
                     const source = reply?.messageId ? liveMessages.get(reply.messageId) : null;
-                    const deleted = Boolean(reply?.messageId && source?.deleted);
+                    const deleted = Boolean(reply?.deleted || (reply?.messageId && source?.deleted));
                     const name = String(source?.name || reply?.name || 'عضو');
                     const text = deleted ? 'رسالة محذوفة' : String(source ? (source.isImage ? 'صورة' : source.txt || source.caption || 'وسائط') : (reply?.txt || ''));
                     const target = reply?.messageId ? ` data-reply-target="${sanitizeHTML(reply.messageId)}"` : '';
@@ -2165,6 +2181,7 @@ ${source}`;
                         return;
                     }
                     await update(ref(db, `messages/${activeMsg.id}`), { txt, edited: true, editedAt: serverTimestamp() });
+                    await syncReplyPreviewRecords(activeMsg.id, txt, false);
                     isEdit = false;
                 } else {
                     const msgData = { 
@@ -2464,6 +2481,8 @@ ${source}`;
                     deletedAt: serverTimestamp(),
                     txt: '🗑️ تم حذف هذه الرسالة'
                 }).then(() => {
+                    return syncReplyPreviewRecords(activeMsg.id, 'رسالة محذوفة', true);
+                }).then(() => {
                     closeMenu();
                     showNotification('تم الحذف للجميع! 🗑️');
                 }).catch(() => {
@@ -2473,8 +2492,9 @@ ${source}`;
         };
 
         // المالك: حذف رسالة أي مستخدم
-        window.adminDeleteMessage = () => {
+        window.adminDeleteMessage = async () => {
             if (confirm('هل أنت متأكد من حذف هذه الرسالة؟')) {
+                await syncReplyPreviewRecords(activeMsg.id, 'رسالة محذوفة', true);
                 remove(ref(db, `messages/${activeMsg.id}`)).then(() => {
                     closeMenu();
                     showNotification('تم حذف الرسالة! 🗑️');
@@ -2485,13 +2505,15 @@ ${source}`;
         };
 
         // المالك: تعديل رسالة أي مستخدم
-        window.adminEditMessage = () => {
+        window.adminEditMessage = async () => {
             const newText = prompt('أدخل النص الجديد:', activeMsg.isImage ? '' : activeMsg.txt);
             if (newText !== null && newText.trim() !== '') {
                 update(ref(db, `messages/${activeMsg.id}`), { 
                     txt: newText, 
                     editedByAdmin: true, 
                     editedAt: serverTimestamp() 
+                }).then(() => {
+                    return syncReplyPreviewRecords(activeMsg.id, newText, false);
                 }).then(() => {
                     closeMenu();
                     showNotification('تم تعديل الرسالة! ✏️');
