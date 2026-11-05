@@ -247,6 +247,7 @@ if (new URLSearchParams(location.search).has('debug')) {
         }
 
         const IMAGE_EDIT_INTENT = /(?:عدّل|عدل|تعديل|غيّر|غير|تغيير|بدّل|بدل|استبدل|احذف|امسح|أضف|اضف|زوّد|زود|خليها|خلي|خلّي|حوّل|حول|رتّب|رتب|حسّن|حسن|edit|modify|change|replace|remove|erase|add|make it|turn it into|adjust|recolor)/iu;
+        const IMAGE_ANALYSIS_INTENT = /(?:حلّل|حلل|حللي|تحليل|اشرح|اشرحي|اوصف|وصف|صف|شوف|شوفي|انظر|انظري|شنو\s+(?:هاي|هذي|هذه)|ما\s+(?:هذه|هاي)|منو\s+فيها|من\s+فيها|شنو\s+بيها|what\s+is\s+(?:this|in)|describe|analy[sz]e|identify|recognize)/iu;
         async function findRepliedImageUrl(messageKey) {
             if (!messageKey) return '';
             try {
@@ -1794,6 +1795,21 @@ ${source}`;
                     const target = reply?.messageId ? ` data-reply-target="${sanitizeHTML(reply.messageId)}"` : '';
                     return `<div class="reply-preview ${deleted ? 'is-deleted' : ''}"${target}><span class="reply-name">${sanitizeHTML(name)}</span><div class="reply-text">${sanitizeHTML(text.slice(0, 50))}${text.length > 50 ? '...' : ''}</div></div>`;
                 };
+                const findLegacyReplyImage = (reply, currentMessage, currentKey) => {
+                    const imageCue = reply?.isImage || /^(?:صورة|صوره|image|photo|🎨|🪄)/iu.test(String(reply?.txt || '').trim());
+                    if (!imageCue) return null;
+                    const currentTime = Number(currentMessage?.time) || Date.now();
+                    const sourceName = String(reply?.name || '').trim();
+                    let nearest = null;
+                    liveMessages.forEach((candidate, candidateKey) => {
+                        if (candidateKey === currentKey || candidate?.deleted || !candidate?.isImage) return;
+                        if (sourceName && String(candidate?.name || '').trim() !== sourceName) return;
+                        const candidateTime = Number(candidate?.time) || 0;
+                        if (!candidateTime || candidateTime > currentTime || currentTime - candidateTime > 30 * 60 * 1000) return;
+                        if (!nearest || candidateTime > Number(nearest.time || 0)) nearest = candidate;
+                    });
+                    return nearest;
+                };
                 
                 let usersSnap;
                 try {
@@ -1916,15 +1932,18 @@ ${source}`;
                             const messageText = typeof m.txt === 'string' ? m.txt : '';
                             const isMention = (!m.forwarded && (/(?:^|[^\p{L}\p{N}_])@(?:naz|ناز)(?=$|[^\p{L}\p{N}_])/iu.test(messageText) || /(?:^|[^\p{L}\p{N}_])ناز(?:$|[^\p{L}\p{N}_])/iu.test(messageText) || /@(?:انشاء|إنشاء)\s+صور/iu.test(messageText) || /@(?:اداة|أداة)-لعبة\s+تفاعلية/iu.test(messageText)));
                             const isReplyToNaz = (!m.forwarded && m.reply && (m.reply.name === (dbAiConfig?.name || 'NAZ Ai') || m.reply.name === 'NAZ Ai'));
-                            const replyTarget = m.reply?.messageId ? messageRecordMap.get(m.reply.messageId) : null;
+                            const replyTarget = m.reply?.messageId
+                                ? (liveMessages.get(m.reply.messageId) || messageRecordMap.get(m.reply.messageId) || null)
+                                : findLegacyReplyImage(m.reply, m, child.key);
                             const isReplyToImage = Boolean(!m.forwarded && m.reply && (m.reply.isImage || replyTarget?.isImage || replyTarget?.qr?.url || (Array.isArray(replyTarget?.imgs) && replyTarget.imgs.length) || /^(?:صورة|🎨|🪄|رمز QR)/u.test(String(m.reply.txt || ''))));
                             const isImageEditRequest = isReplyToImage && IMAGE_EDIT_INTENT.test(messageText);
-                            const shouldReply = Boolean(isMention || isReplyToNaz || isImageEditRequest);
+                            const isImageAnalysisRequest = isReplyToImage && IMAGE_ANALYSIS_INTENT.test(messageText);
+                            const shouldReply = Boolean(isMention || isReplyToNaz || isImageEditRequest || isImageAnalysisRequest);
                             const imageReplyPath = isReplyToImage ? getNazVisionImagePath(replyTarget) : '';
 
                             void reactAsNaz(child.key, m, shouldReply);
-                            if (shouldReply && (dbAiConfig?.apiKey || imageReplyPath) && !m.aiResponded) {
-                                void triggerAiResponse(child.key, m.txt, m.name, m.uid, imageReplyPath);
+                            if (shouldReply && (dbAiConfig?.apiKey || imageReplyPath || isReplyToImage) && !m.aiResponded) {
+                                void triggerAiResponse(child.key, m.txt, m.name, m.uid, imageReplyPath, isReplyToImage);
                             }
                         }
                     }
@@ -3714,12 +3733,12 @@ ${source}`;
             }
         }
 
-        async function triggerAiResponse(messageKey, userMessage, userName, speakerId, visionImagePath = '') {
+        async function triggerAiResponse(messageKey, userMessage, userName, speakerId, visionImagePath = '', visionRequested = false) {
             if (!dbAiConfig) {
                 console.error('❌ AI config not available, cannot respond');
                 return;
             }
-            if (!getRuntimeKeys().length && !visionImagePath) {
+            if (!getRuntimeKeys().length && !visionImagePath && !visionRequested) {
                 const aiName = dbAiConfig.name || 'NAZ Ai';
                 const aiAvatar = dbAiConfig.avatar || getDefaultAvatarUrl('NAZ');
                 try {
@@ -3770,7 +3789,17 @@ ${source}`;
             const aiAvatar = dbAiConfig.avatar || getDefaultAvatarUrl('NAZ');
             const keySummary = keyStatusSummary();
 
-            if (!keySummary.ready && !visionImagePath) {
+            if (visionRequested && !visionImagePath) {
+                await push(ref(db, 'messages'), {
+                    uid: 'naz_ai', name: aiName,
+                    txt: 'ما وصلني ربط الصورة مع ردّك. رد مباشرةً على رسالة الصورة نفسها أو أعد رفعها، وبعدها أقدر أحللها.',
+                    time: serverTimestamp(), avatar: aiAvatar,
+                    reply: { name: safeUserName, txt: safeUserMessage.slice(0, 120) }
+                });
+                return;
+            }
+
+            if (!keySummary.ready && !visionImagePath && !visionRequested) {
                 const allRejected = keySummary.total > 0 && keySummary.exhausted === keySummary.total;
                 const notice = allRejected
                     ? `كل مفاتيح OpenRouter (${keySummary.total}) مرفوضة أو معطلة. افتح إعدادات NAZ واضغط «فحص المفاتيح».`
@@ -3955,6 +3984,41 @@ ${source}`;
                         console.warn('🎨 could not report failure:', fallbackError);
                     }
                     showNotification('⚠️ ما كدرت أرسم هالمرة');
+                    return;
+                }
+            }
+            if (visionImagePath) {
+                try {
+                    const visionAnswer = await requestNazVision(visionImagePath, safeUserMessage);
+                    await push(ref(db, 'messages'), {
+                        uid: 'naz_ai',
+                        name: aiName,
+                        txt: visionAnswer,
+                        time: serverTimestamp(),
+                        avatar: aiAvatar,
+                        isImage: false,
+                        reply: { name: safeUserName, txt: safeUserMessage.slice(0, 120) }
+                    });
+                    showNotification(isOwnerSession() ? '✅ ردت ناز · Cloudflare Vision' : '✅ تم الرد من قبل ناز');
+                    return;
+                } catch (visionError) {
+                    console.warn('Cloudflare image understanding unavailable:', visionError?.message || visionError);
+                    const visionCode = String(visionError?.message || 'vision_inference_failed');
+                    if (isOwnerSession()) {
+                        showNotification(visionCode === 'vision_model_license_required'
+                            ? 'يلزم قبول ترخيص نموذج الرؤية في Cloudflare مرة واحدة.'
+                            : visionCode === 'vision_quota_exceeded'
+                                ? 'انتهت حصة Cloudflare Vision اليومية.'
+                                : `تعذر تحليل الصورة (${visionCode}).`);
+                    }
+                    await push(ref(db, 'messages'), {
+                        uid: 'naz_ai',
+                        name: aiName,
+                        txt: 'ما كدرت أحلل الصورة هالمرة. تأكد أن الصورة مرفوعة داخل الدردشة وجرب مرة ثانية.',
+                        time: serverTimestamp(),
+                        avatar: aiAvatar,
+                        reply: { name: safeUserName, txt: safeUserMessage.slice(0, 120) }
+                    });
                     return;
                 }
             }
@@ -4261,41 +4325,6 @@ ${source}`;
                     reply: { name: safeUserName, txt: safeUserMessage.slice(0, 120) }
                 });
                 return;
-            }
-            if (visionImagePath) {
-                try {
-                    const visionAnswer = await requestNazVision(visionImagePath, safeUserMessage);
-                    await push(ref(db, 'messages'), {
-                        uid: 'naz_ai',
-                        name: aiName,
-                        txt: visionAnswer,
-                        time: serverTimestamp(),
-                        avatar: aiAvatar,
-                        isImage: false,
-                        reply: { name: safeUserName, txt: safeUserMessage.slice(0, 120) }
-                    });
-                    showNotification(isOwnerSession() ? '✅ ردت ناز · Cloudflare Vision' : '✅ تم الرد من قبل ناز');
-                    return;
-                } catch (visionError) {
-                    console.warn('Cloudflare image understanding unavailable:', visionError?.message || visionError);
-                    const visionCode = String(visionError?.message || 'vision_inference_failed');
-                    if (isOwnerSession()) {
-                        showNotification(visionCode === 'vision_model_license_required'
-                            ? 'يلزم قبول ترخيص نموذج الرؤية في Cloudflare مرة واحدة.'
-                            : visionCode === 'vision_quota_exceeded'
-                                ? 'انتهت حصة Cloudflare Vision اليومية.'
-                                : `تعذر تحليل الصورة (${visionCode}).`);
-                    }
-                    await push(ref(db, 'messages'), {
-                        uid: 'naz_ai',
-                        name: aiName,
-                        txt: 'ما كدرت أحلل الصورة هالمرة. تأكد أن الصورة مرفوعة داخل الدردشة وجرب مرة ثانية.',
-                        time: serverTimestamp(),
-                        avatar: aiAvatar,
-                        reply: { name: safeUserName, txt: safeUserMessage.slice(0, 120) }
-                    });
-                    return;
-                }
             }
             const nazUserMessage = visionImagePath
                 ? `${safeUserMessage}\n\n[أُرفقت صورة في الرسالة الأصلية، لكن تعذّر تحليلها حالياً؛ لا تدّعي أنك رأيتها.]`
